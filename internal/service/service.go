@@ -63,6 +63,23 @@ func selfPath() (string, error) {
 	return os.Executable()
 }
 
+// resolveUser returns the real (non-root) user name and home directory.
+// When running under sudo, SUDO_USER holds the original user.
+func resolveUser() (string, string, error) {
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		u, err := user.Lookup(sudoUser)
+		if err != nil {
+			return "", "", fmt.Errorf("lookup SUDO_USER %s: %w", sudoUser, err)
+		}
+		return u.Username, u.HomeDir, nil
+	}
+	u, err := user.Current()
+	if err != nil {
+		return "", "", fmt.Errorf("get current user: %w", err)
+	}
+	return u.Username, u.HomeDir, nil
+}
+
 // InstallService registers claude-postman as a system service.
 func InstallService() error {
 	bin, err := selfPath()
@@ -97,16 +114,12 @@ func installSystemd(bin string) error {
 		return fmt.Errorf("root privileges required.\n  Run: sudo %s install-service", bin)
 	}
 
-	u, err := user.Current()
+	userName, home, err := resolveUser()
 	if err != nil {
-		return fmt.Errorf("get current user: %w", err)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("get home dir: %w", err)
+		return err
 	}
 
-	content := generateSystemdUnit(bin, u.Username, home)
+	content := generateSystemdUnit(bin, userName, home)
 	if err := os.WriteFile(systemdPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write service file: %w", err)
 	}

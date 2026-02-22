@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `install-service` / `uninstall-service`: show actionable `sudo` hint with absolute binary path instead of raw "permission denied" on Linux
+- `install-service`: resolve original user via `SUDO_USER` when running under sudo, so the systemd unit runs as the correct user with the correct HOME
 
 ## [v0.4.0] - 2026-02-22
 
