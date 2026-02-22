@@ -243,8 +243,9 @@ curl -fsSL https://get.claude-postman.dev | bash
 
 ### 9.3 재시작 복구
 - 서버 재시작 → tmux 세션 사라짐
-- DB 기반으로 종료된 세션 감지
-- 사용자에게 "세션 종료됨" 알림
+- DB에서 active/idle 세션 조회
+- tmux 세션 재생성 + `claude --resume`으로 문맥 복구 시도
+- 사용자에게 "세션 복구됨" 알림
 
 ---
 
