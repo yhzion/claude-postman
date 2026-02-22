@@ -2,6 +2,9 @@
 
 claude-postman 프로젝트의 Claude Code 작업 가이드.
 
+> **SSOT (Single Source of Truth)**: 상세 설계는 [아키텍처 문서](docs/architecture/)가 권위 있는 원본입니다.
+> 이 파일은 프로젝트 개요와 코딩 가이드를 제공하며, 설계 세부사항은 아키텍처 문서를 참조하세요.
+
 ## 프로젝트 개요
 
 Claude Code와 사용자 사이를 **이메일로 중계**하는 서버 프로그램.
@@ -104,11 +107,9 @@ CLAUDE_POSTMAN_IMAP_PORT=993
 
 ## 문서
 
-- [기획 문서](docs/ideas.md)
-- [유즈케이스](docs/usecases/SUMMARY.md)
-- [기술 스택 결정](docs/tech-stack/)
+### 아키텍처 설계 (SSOT)
 
-### 아키텍처 설계
+구현 시 이 문서들이 최종 권위입니다:
 
 - [01. tmux 출력 캡처](docs/architecture/01-tmux-output-capture.md)
 - [02. Config 설계](docs/architecture/02-config.md)
@@ -116,3 +117,9 @@ CLAUDE_POSTMAN_IMAP_PORT=993
 - [04. Session 관리](docs/architecture/04-session.md)
 - [05. Email (SMTP/IMAP)](docs/architecture/05-email.md)
 - [06. CLI, Service, Doctor](docs/architecture/06-service.md)
+
+### 참고 문서
+
+- [기획 문서](docs/ideas.md) — 초기 브레인스토밍
+- [유즈케이스](docs/usecases/SUMMARY.md) — 유즈케이스 모음
+- [기술 스택 결정](docs/tech-stack/) — 기술 선택 배경

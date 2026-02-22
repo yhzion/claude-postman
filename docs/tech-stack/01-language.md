@@ -1,5 +1,7 @@
 # 기술 스택: 프로그래밍 언어
 
+> 기술 스택 결정 배경 문서. 확정된 버전/의존성은 [CLAUDE.md](../../CLAUDE.md) 참조 (SSOT).
+
 ## 결정: Go
 
 claude-postman은 **Go**로 구현한다.
@@ -11,16 +13,15 @@ claude-postman은 **Go**로 구현한다.
 - `curl | bash` 설치 방식에 적합
 
 ### 2. 크로스 플랫폼 지원
-- Mac, Linux, Windows 모두 단일 코드베이스로 지원
+- Mac, Linux 단일 코드베이스로 지원
 - 크로스 컴파일이 매우 간단 (`GOOS=linux go build`)
 
 ### 3. 이메일 처리
 - SMTP/IMAP 라이브러리가 성숙함
-- `net/smtp`,第三方 IMAP 라이브러리 다수
+- `net/smtp`, `emersion/go-imap` v2 등
 
 ### 4. 시스템 서비스
-- `kardianos/service`로 systemd, launchd, Windows 서비스 통합 지원
-- 하나의 코드로 모든 플랫폼 서비스 등록
+- 네이티브 systemd/launchd 직접 제어 (→ [06-service.md](../architecture/06-service.md))
 
 ### 5. 성능 및 메모리
 - GC가 있지만 가벼움 (수십 MB 수준)
@@ -37,8 +38,3 @@ claude-postman은 **Go**로 구현한다.
 |------|----------|
 | Python | 메모리/성능, 런타임 필요 |
 | Rust | 학습 곡선, 이메일 라이브러리 부족, 개발 속도 |
-
-## Go 버전
-
-- 최소: Go 1.21+
-- 권장: Go 1.22+
