@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -12,13 +11,15 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/charmbracelet/huh"
 	"github.com/emersion/go-imap/v2/imapclient"
 )
 
 // initWizard holds the I/O dependencies for the init wizard.
 type initWizard struct {
-	in         *bufio.Scanner
+	in         io.Reader
 	out        io.Writer
+	accessible bool          // true = accessible mode (테스트용)
 	connTester func(*Config) // nil이면 기본 testConnection 사용
 }
 
@@ -48,68 +49,30 @@ func (w *initWizard) printf(format string, args ...any) {
 	fmt.Fprintf(w.out, format, args...)
 }
 
-func (w *initWizard) readLine() string {
-	if w.in.Scan() {
-		return strings.TrimSpace(w.in.Text())
-	}
-	return ""
+func (w *initWizard) runForm(f *huh.Form) error {
+	return f.WithInput(w.in).WithOutput(w.out).WithAccessible(w.accessible).Run()
 }
 
-// prompt shows a prompt and returns user input. If input is empty, returns defaultVal.
-func (w *initWizard) prompt(label, defaultVal string) string {
-	if defaultVal != "" {
-		w.printf("  %s (default: %s)\n  > ", label, defaultVal)
-	} else {
-		w.printf("  %s\n  > ", label)
+// byteReader wraps an io.Reader to return at most one byte per Read call.
+// This prevents bufio.Scanner (used by huh's accessible mode) from buffering
+// ahead when multiple forms share the same underlying reader.
+type byteReader struct {
+	r io.Reader
+}
+
+func (br *byteReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
 	}
-	input := w.readLine()
-	if input == "" {
-		return defaultVal
+	return br.r.Read(p[:1])
+}
+
+func (w *initWizard) newPasswordInput() *huh.Input {
+	input := huh.NewInput()
+	if !w.accessible {
+		input.EchoMode(huh.EchoModePassword)
 	}
 	return input
-}
-
-// promptSecret shows a prompt for sensitive input. Shows [unchanged] if defaultVal is set.
-func (w *initWizard) promptSecret(label, defaultVal string) string {
-	if defaultVal != "" {
-		w.printf("  %s [unchanged]\n  Change? (y/N) > ", label)
-		if answer := w.readLine(); answer != "y" && answer != "Y" {
-			return defaultVal
-		}
-	}
-	w.printf("  %s\n  > ", label)
-	return w.readLine()
-}
-
-// promptChoice shows a numbered menu and returns the selected index (0-based).
-func (w *initWizard) promptChoice(options []string, defaultIdx int) int {
-	for i, opt := range options {
-		w.printf("  (%d) %s\n", i+1, opt)
-	}
-	w.printf("  > ")
-	input := w.readLine()
-	if input == "" {
-		return defaultIdx
-	}
-	n, err := strconv.Atoi(input)
-	if err != nil || n < 1 || n > len(options) {
-		return defaultIdx
-	}
-	return n - 1
-}
-
-// promptInt reads an integer with a default value.
-func (w *initWizard) promptInt(label string, current, fallback int) int {
-	def := current
-	if def == 0 {
-		def = fallback
-	}
-	s := w.prompt(label, strconv.Itoa(def))
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return n
 }
 
 // run은 3단계 마법사 흐름을 실행한다.
@@ -130,19 +93,21 @@ func (w *initWizard) run() error {
 
 	// [1/3] Data Directory
 	w.printf("[1/3] Data Directory\n")
-	defaultDataDir := cfg.General.DataDir
-	if defaultDataDir == "" {
-		defaultDataDir = filepath.Join(ConfigDir(), "data")
+	if err := w.stepDataDir(cfg); err != nil {
+		return err
 	}
-	cfg.General.DataDir = w.prompt("Where should claude-postman store its data?", defaultDataDir)
 
 	// [2/3] Email Account
 	w.printf("\n[2/3] Email Account\n")
-	w.stepEmail(cfg, existing)
+	if err := w.stepEmail(cfg, existing); err != nil {
+		return err
+	}
 
 	// [3/3] Default Model
 	w.printf("\n[3/3] Default Model\n")
-	w.stepModel(cfg, existing)
+	if err := w.stepModel(cfg, existing); err != nil {
+		return err
+	}
 
 	// Save
 	if err := w.save(cfg); err != nil {
@@ -167,26 +132,74 @@ func (w *initWizard) runWithoutConnTest() error {
 	return w.run()
 }
 
-func (w *initWizard) stepEmail(cfg *Config, existing *Config) {
-	// Re-run: compact flow with Change? prompt
+func (w *initWizard) stepDataDir(cfg *Config) error {
+	if cfg.General.DataDir == "" {
+		cfg.General.DataDir = filepath.Join(ConfigDir(), "data")
+	}
+	return w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Where should claude-postman store its data?").
+				Value(&cfg.General.DataDir),
+		),
+	))
+}
+
+func (w *initWizard) stepEmail(cfg *Config, existing *Config) error {
 	if existing != nil {
-		providerName := strings.ToUpper(existing.Email.Provider[:1]) + existing.Email.Provider[1:]
-		w.printf("  Provider: %s\n", providerName)
-		cfg.Email.User = w.prompt("Email", existing.Email.User)
-		cfg.Email.AppPassword = w.promptSecret("App password", existing.Email.AppPassword)
-		return
+		return w.stepEmailRerun(cfg, existing)
+	}
+	return w.stepEmailFresh(cfg)
+}
+
+func (w *initWizard) stepEmailFresh(cfg *Config) error {
+	providerKey, err := w.selectProvider(cfg)
+	if err != nil {
+		return err
 	}
 
-	// Fresh setup: full provider selection
-	w.printf("  Select your email provider:\n")
-	providers := []string{"Gmail", "Outlook", "Other (manual setup)"}
-	providerKeys := []string{"gmail", "outlook", "other"}
+	// Email address
+	if err := w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Email address").Value(&cfg.Email.User),
+		),
+	)); err != nil {
+		return err
+	}
 
-	idx := w.promptChoice(providers, 0)
-	key := providerKeys[idx]
-	cfg.Email.Provider = key
+	// Show help for known providers
+	if help, ok := providerHelp[providerKey]; ok {
+		w.printf("\n%s\n\n", help)
+	}
 
-	if preset, ok := Presets[key]; ok {
+	// App password
+	return w.runForm(huh.NewForm(
+		huh.NewGroup(
+			w.newPasswordInput().Title("App password").Value(&cfg.Email.AppPassword),
+		),
+	))
+}
+
+func (w *initWizard) selectProvider(cfg *Config) (string, error) {
+	var providerKey string
+	err := w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select your email provider").
+				Options(
+					huh.NewOption("Gmail", "gmail"),
+					huh.NewOption("Outlook", "outlook"),
+					huh.NewOption("Other (manual setup)", "other"),
+				).
+				Value(&providerKey),
+		),
+	))
+	if err != nil {
+		return "", err
+	}
+	cfg.Email.Provider = providerKey
+
+	if preset, ok := Presets[providerKey]; ok {
 		cfg.Email.SMTPHost = preset.SMTPHost
 		cfg.Email.SMTPPort = preset.SMTPPort
 		cfg.Email.IMAPHost = preset.IMAPHost
@@ -194,46 +207,106 @@ func (w *initWizard) stepEmail(cfg *Config, existing *Config) {
 		w.printf("\n  ✓ SMTP: %s:%d\n", cfg.Email.SMTPHost, cfg.Email.SMTPPort)
 		w.printf("  ✓ IMAP: %s:%d\n\n", cfg.Email.IMAPHost, cfg.Email.IMAPPort)
 	} else {
-		// Manual setup
-		cfg.Email.SMTPHost = w.prompt("SMTP host", "")
-		cfg.Email.SMTPPort = w.promptInt("SMTP port", 0, 587)
-		cfg.Email.IMAPHost = w.prompt("IMAP host", "")
-		cfg.Email.IMAPPort = w.promptInt("IMAP port", 0, 993)
-		w.printf("\n")
+		if err := w.inputManualServer(cfg); err != nil {
+			return "", err
+		}
 	}
-
-	cfg.Email.User = w.prompt("Email address", "")
-
-	// Show help for known providers
-	if help, ok := providerHelp[key]; ok {
-		w.printf("\n%s\n\n", help)
-	}
-
-	cfg.Email.AppPassword = w.promptSecret("App password", "")
+	return providerKey, nil
 }
 
-func (w *initWizard) stepModel(cfg *Config, existing *Config) {
-	// Re-run: compact flow with Change? prompt
+func (w *initWizard) inputManualServer(cfg *Config) error {
+	smtpPort := "587"
+	imapPort := "993"
+	if err := w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("SMTP host").Value(&cfg.Email.SMTPHost),
+			huh.NewInput().Title("SMTP port").Value(&smtpPort),
+			huh.NewInput().Title("IMAP host").Value(&cfg.Email.IMAPHost),
+			huh.NewInput().Title("IMAP port").Value(&imapPort),
+		),
+	)); err != nil {
+		return err
+	}
+	if n, err := strconv.Atoi(smtpPort); err == nil {
+		cfg.Email.SMTPPort = n
+	} else {
+		cfg.Email.SMTPPort = 587
+	}
+	if n, err := strconv.Atoi(imapPort); err == nil {
+		cfg.Email.IMAPPort = n
+	} else {
+		cfg.Email.IMAPPort = 993
+	}
+	w.printf("\n")
+	return nil
+}
+
+func (w *initWizard) stepEmailRerun(cfg *Config, existing *Config) error {
+	providerName := strings.ToUpper(existing.Email.Provider[:1]) + existing.Email.Provider[1:]
+	w.printf("  Provider: %s\n", providerName)
+
+	// Email (default: existing value via cfg copy)
+	if err := w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Email").Value(&cfg.Email.User),
+		),
+	)); err != nil {
+		return err
+	}
+
+	// Password: confirm change
+	changePassword := false
+	if err := w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("App password [unchanged] Change?").
+				Value(&changePassword),
+		),
+	)); err != nil {
+		return err
+	}
+	if changePassword {
+		cfg.Email.AppPassword = ""
+		return w.runForm(huh.NewForm(
+			huh.NewGroup(
+				w.newPasswordInput().Title("App password").Value(&cfg.Email.AppPassword),
+			),
+		))
+	}
+	return nil
+}
+
+func (w *initWizard) stepModel(cfg *Config, existing *Config) error {
 	if existing != nil {
 		currentName := strings.ToUpper(existing.General.DefaultModel[:1]) + existing.General.DefaultModel[1:]
 		w.printf("  Current: %s\n", currentName)
-		w.printf("  Change? (y/N) > ")
-		if answer := w.readLine(); answer != "y" && answer != "Y" {
-			return
+
+		change := false
+		if err := w.runForm(huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().Title("Change?").Value(&change),
+			),
+		)); err != nil {
+			return err
+		}
+		if !change {
+			return nil
 		}
 	}
 
-	models := []string{
-		"Sonnet  - balanced speed and quality",
-		"Opus    - highest quality",
-		"Haiku   - fastest",
-	}
-	modelKeys := []string{"sonnet", "opus", "haiku"}
-
-	w.printf("  Which Claude model to use by default?\n")
 	w.printf("  (Sessions can override this per request)\n")
-	idx := w.promptChoice(models, 0)
-	cfg.General.DefaultModel = modelKeys[idx]
+	return w.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Which Claude model to use by default?").
+				Options(
+					huh.NewOption("Sonnet - balanced speed and quality", "sonnet"),
+					huh.NewOption("Opus - highest quality", "opus"),
+					huh.NewOption("Haiku - fastest", "haiku"),
+				).
+				Value(&cfg.General.DefaultModel),
+		),
+	))
 }
 
 func (w *initWizard) save(cfg *Config) error {

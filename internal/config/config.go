@@ -2,7 +2,6 @@
 package config
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -78,7 +77,7 @@ func ConfigDir() string {
 // RunInit는 대화형 설정 마법사를 실행한다.
 func RunInit() error {
 	w := &initWizard{
-		in:  bufio.NewScanner(os.Stdin),
+		in:  os.Stdin,
 		out: os.Stdout,
 	}
 	return w.run()

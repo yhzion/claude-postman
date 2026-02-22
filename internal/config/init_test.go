@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -13,109 +12,14 @@ import (
 )
 
 // newTestWizard는 테스트용 initWizard를 생성한다.
+// huh accessible 모드로 실행하여 string reader 기반 입력을 사용한다.
 func newTestWizard(input string) (*initWizard, *bytes.Buffer) {
 	out := &bytes.Buffer{}
 	return &initWizard{
-		in:  bufio.NewScanner(strings.NewReader(input)),
-		out: out,
+		in:         &byteReader{strings.NewReader(input)},
+		out:        out,
+		accessible: true,
 	}, out
-}
-
-// --- prompt() ---
-
-func TestPrompt_ReturnsUserInput(t *testing.T) {
-	w, _ := newTestWizard("custom-value\n")
-	got := w.prompt("Enter something", "default")
-	assert.Equal(t, "custom-value", got)
-}
-
-func TestPrompt_ReturnsDefaultOnEmpty(t *testing.T) {
-	w, _ := newTestWizard("\n")
-	got := w.prompt("Enter something", "default-val")
-	assert.Equal(t, "default-val", got)
-}
-
-// --- promptChoice() ---
-
-func TestPromptChoice_SelectsByNumber(t *testing.T) {
-	// 1-based input "2" → 0-based index 1
-	w, _ := newTestWizard("2\n")
-	got := w.promptChoice([]string{"A", "B", "C"}, 0)
-	assert.Equal(t, 1, got)
-}
-
-func TestPromptChoice_ReturnsDefaultOnEmpty(t *testing.T) {
-	w, _ := newTestWizard("\n")
-	got := w.promptChoice([]string{"A", "B", "C"}, 2)
-	assert.Equal(t, 2, got)
-}
-
-func TestPromptChoice_ReturnsDefaultOnInvalid(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{"out of range high", "5\n"},
-		{"out of range zero", "0\n"},
-		{"non-number", "abc\n"},
-		{"negative", "-1\n"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w, _ := newTestWizard(tt.input)
-			got := w.promptChoice([]string{"A", "B", "C"}, 0)
-			assert.Equal(t, 0, got)
-		})
-	}
-}
-
-// --- promptSecret() ---
-
-func TestPromptSecret_KeepsExistingOnN(t *testing.T) {
-	w, _ := newTestWizard("N\n")
-	got := w.promptSecret("Password", "existing-pass")
-	assert.Equal(t, "existing-pass", got)
-}
-
-func TestPromptSecret_KeepsExistingOnEmpty(t *testing.T) {
-	// Enter (empty) is treated as "N" (not "y")
-	w, _ := newTestWizard("\n")
-	got := w.promptSecret("Password", "existing-pass")
-	assert.Equal(t, "existing-pass", got)
-}
-
-func TestPromptSecret_ReadsNewValueOnY(t *testing.T) {
-	w, _ := newTestWizard("y\nnew-secret\n")
-	got := w.promptSecret("Password", "existing-pass")
-	assert.Equal(t, "new-secret", got)
-}
-
-func TestPromptSecret_ReadsDirectlyWhenNoExisting(t *testing.T) {
-	w, _ := newTestWizard("my-secret\n")
-	got := w.promptSecret("Password", "")
-	assert.Equal(t, "my-secret", got)
-}
-
-// --- promptInt() ---
-
-func TestPromptInt_ReturnsParsedInt(t *testing.T) {
-	w, _ := newTestWizard("42\n")
-	got := w.promptInt("Port", 587, 993)
-	assert.Equal(t, 42, got)
-}
-
-func TestPromptInt_ReturnsFallbackWhenCurrentZeroAndEmpty(t *testing.T) {
-	// current=0 → def=fallback(993), empty input → returns 993
-	w, _ := newTestWizard("\n")
-	got := w.promptInt("Port", 0, 993)
-	assert.Equal(t, 993, got)
-}
-
-func TestPromptInt_ReturnsCurrentWhenNonZeroAndEmpty(t *testing.T) {
-	// current=587 → def=587, empty input → returns 587
-	w, _ := newTestWizard("\n")
-	got := w.promptInt("Port", 587, 993)
-	assert.Equal(t, 587, got)
 }
 
 // --- save() ---
@@ -176,13 +80,16 @@ func TestWizardRun_FreshSetup(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	// Simulate: Enter (default data dir) → 1 (Gmail) → email → password → 1 (Sonnet)
+	// huh accessible mode:
+	// Input: empty → default, text → value
+	// Select: 1-based number
+	// Confirm: y/n
 	input := strings.Join([]string{
 		"",              // data dir → default
-		"1",             // Gmail
+		"1",             // Gmail (Select: 1-based)
 		"me@gmail.com",  // email
 		"app-pass-1234", // app password
-		"1",             // Sonnet
+		"1",             // Sonnet (Select: 1-based)
 	}, "\n") + "\n"
 
 	w, _ := newTestWizard(input)
@@ -219,12 +126,14 @@ func TestWizardRun_RerunPreservesExisting(t *testing.T) {
 
 	writeTestConfig(t, configDir, validConfigTOML(dataDir))
 
-	// Re-run flow: Enter (keep data dir) → Enter (keep email) → N (keep password) → N (keep model)
+	// huh accessible mode:
+	// Input empty → keeps existing (default)
+	// Confirm: n → false (keep existing)
 	input := strings.Join([]string{
-		"",  // keep data dir
-		"",  // keep email
-		"N", // keep password
-		"N", // keep model
+		"",  // keep data dir (Input: empty → default)
+		"",  // keep email (Input: empty → default)
+		"n", // keep password (Confirm: n → false)
+		"n", // keep model (Confirm: n → false)
 	}, "\n") + "\n"
 
 	w, _ := newTestWizard(input)
