@@ -168,21 +168,21 @@ func (w *initWizard) runWithoutConnTest() error {
 }
 
 func (w *initWizard) stepEmail(cfg *Config, existing *Config) {
+	// Re-run: compact flow with Change? prompt
+	if existing != nil {
+		providerName := strings.ToUpper(existing.Email.Provider[:1]) + existing.Email.Provider[1:]
+		w.printf("  Provider: %s\n", providerName)
+		cfg.Email.User = w.prompt("Email", existing.Email.User)
+		cfg.Email.AppPassword = w.promptSecret("App password", existing.Email.AppPassword)
+		return
+	}
+
+	// Fresh setup: full provider selection
 	w.printf("  Select your email provider:\n")
 	providers := []string{"Gmail", "Outlook", "Other (manual setup)"}
 	providerKeys := []string{"gmail", "outlook", "other"}
 
-	defaultIdx := 0
-	if existing != nil {
-		for i, k := range providerKeys {
-			if k == existing.Email.Provider {
-				defaultIdx = i
-				break
-			}
-		}
-	}
-
-	idx := w.promptChoice(providers, defaultIdx)
+	idx := w.promptChoice(providers, 0)
 	key := providerKeys[idx]
 	cfg.Email.Provider = key
 
@@ -195,28 +195,34 @@ func (w *initWizard) stepEmail(cfg *Config, existing *Config) {
 		w.printf("  ✓ IMAP: %s:%d\n\n", cfg.Email.IMAPHost, cfg.Email.IMAPPort)
 	} else {
 		// Manual setup
-		cfg.Email.SMTPHost = w.prompt("SMTP host", cfg.Email.SMTPHost)
-		cfg.Email.SMTPPort = w.promptInt("SMTP port", cfg.Email.SMTPPort, 587)
-		cfg.Email.IMAPHost = w.prompt("IMAP host", cfg.Email.IMAPHost)
-		cfg.Email.IMAPPort = w.promptInt("IMAP port", cfg.Email.IMAPPort, 993)
+		cfg.Email.SMTPHost = w.prompt("SMTP host", "")
+		cfg.Email.SMTPPort = w.promptInt("SMTP port", 0, 587)
+		cfg.Email.IMAPHost = w.prompt("IMAP host", "")
+		cfg.Email.IMAPPort = w.promptInt("IMAP port", 0, 993)
 		w.printf("\n")
 	}
 
-	cfg.Email.User = w.prompt("Email address", cfg.Email.User)
+	cfg.Email.User = w.prompt("Email address", "")
 
 	// Show help for known providers
 	if help, ok := providerHelp[key]; ok {
 		w.printf("\n%s\n\n", help)
 	}
 
-	existingPassword := ""
-	if existing != nil {
-		existingPassword = existing.Email.AppPassword
-	}
-	cfg.Email.AppPassword = w.promptSecret("App password", existingPassword)
+	cfg.Email.AppPassword = w.promptSecret("App password", "")
 }
 
 func (w *initWizard) stepModel(cfg *Config, existing *Config) {
+	// Re-run: compact flow with Change? prompt
+	if existing != nil {
+		currentName := strings.ToUpper(existing.General.DefaultModel[:1]) + existing.General.DefaultModel[1:]
+		w.printf("  Current: %s\n", currentName)
+		w.printf("  Change? (y/N) > ")
+		if answer := w.readLine(); answer != "y" && answer != "Y" {
+			return
+		}
+	}
+
 	models := []string{
 		"Sonnet  - balanced speed and quality",
 		"Opus    - highest quality",
@@ -224,19 +230,9 @@ func (w *initWizard) stepModel(cfg *Config, existing *Config) {
 	}
 	modelKeys := []string{"sonnet", "opus", "haiku"}
 
-	defaultIdx := 0
-	if existing != nil {
-		for i, k := range modelKeys {
-			if k == existing.General.DefaultModel {
-				defaultIdx = i
-				break
-			}
-		}
-	}
-
 	w.printf("  Which Claude model to use by default?\n")
 	w.printf("  (Sessions can override this per request)\n")
-	idx := w.promptChoice(models, defaultIdx)
+	idx := w.promptChoice(models, 0)
 	cfg.General.DefaultModel = modelKeys[idx]
 }
 
