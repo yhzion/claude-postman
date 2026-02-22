@@ -116,15 +116,16 @@ Model: sonnet
 
 **파싱 규칙 (키워드 기반):**
 ```
-정규식으로 추출:
+변환 순서 (반드시 이 순서로 실행):
+  1. HTML 본문인 경우 → 텍스트 추출 (태그 제거)
+  2. "---------- Forwarded message ----------" 검색 → 이후 텍스트 전체 제거
+  3. 각 줄에서 ">" 또는 "> " 인용 접두사 제거 (최대 1단계만)
+  4. 앞뒤 공백 정리
+
+정규식으로 추출 (multiline 모드):
   ^Directory:\s*(.+)$  → working_dir (미매칭 시 config.data_dir의 부모 또는 ~)
   ^Model:\s*(.+)$      → model (미매칭 시 config.default_model)
-  나머지 텍스트         → 태스크 프롬프트
-
-포워딩 아티팩트 처리:
-  - "---------- Forwarded message ----------" 이후 텍스트는 무시
-  - "> " 인용 접두사 제거 후 파싱
-  - HTML 본문인 경우 텍스트 추출 후 파싱
+  나머지 텍스트 (빈 줄 제거 후) → 태스크 프롬프트
 ```
 
 사용자는 Directory, Model을 수정하고 태스크 내용을 입력한 후 자기 자신에게 포워드.
@@ -276,8 +277,10 @@ func New(cfg *config.EmailConfig, store *storage.Store) *Mailer
 // 호출자(serve 루프)가 반환값을 받아 inbox 삽입, 세션 생성 등을 오케스트레이션.
 func (m *Mailer) Poll() ([]*IncomingMessage, error)
 
-// 발송 (outbox 테이블 경유)
-func (m *Mailer) Send(sessionID, subject, htmlBody string) error  // outbox에 pending으로 삽입
+// 발송
+// Send()는 outbox에 pending으로 삽입만 함 (SMTP 발송은 FlushOutbox에서).
+// 트랜잭션 외부에서 호출. 트랜잭션 내에서는 store.CreateOutbox() 직접 사용.
+func (m *Mailer) Send(sessionID, subject, htmlBody string) error
 func (m *Mailer) FlushOutbox() error  // pending + next_retry_at <= now 조회, 지수 백오프 재시도
 
 // 템플릿

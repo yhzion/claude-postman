@@ -115,7 +115,7 @@ INSERT INTO schema_version (version) VALUES (1);
 | message_id | TEXT | 이메일 Message-ID (스레드 매칭용) |
 | subject | TEXT | 이메일 제목 |
 | body | TEXT | 이메일 본문 (HTML) |
-| attachments | TEXT | 첨부파일 정보 (JSON) |
+| attachments | TEXT | 첨부파일 정보 (JSON, v1 미사용 - 향후 확장용) |
 | status | TEXT | `pending`, `sent`, `failed` |
 | retry_count | INTEGER | 재시도 횟수 (0부터 시작) |
 | next_retry_at | DATETIME | 다음 재시도 가능 시각 (지수 백오프) |
@@ -227,7 +227,7 @@ type OutboxMessage struct {
     MessageID   *string    // nullable, 발송 후 설정
     Subject     string
     Body        string
-    Attachments *string    // nullable, JSON
+    Attachments *string    // nullable, JSON (v1 미사용)
     Status      string     // "pending" | "sent" | "failed"
     RetryCount  int        // 재시도 횟수
     NextRetryAt *time.Time // nullable, 다음 재시도 가능 시각

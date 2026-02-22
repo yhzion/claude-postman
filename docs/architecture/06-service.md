@@ -277,7 +277,7 @@ errgroup.Group (context.Context로 종료 제어)
   │      2. 각 메시지 분류:
   │         ├─ IsNewSession → mgr.Create() (세션 생성)
   │         └─ 기존 세션 → store.EnqueueMessage() (inbox 삽입)
-  │      3. idle 세션의 미처리 inbox 확인 → mgr.Send() (세션 전달)
+  │      3. idle 세션의 미처리 inbox 확인 → mgr.DeliverNext() (세션 전달)
   │
   ├─ goroutine 2: Outbox 플러시
   │   └─ 매 poll_interval_sec마다 FlushOutbox() 실행

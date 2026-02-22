@@ -206,8 +206,13 @@ func New(store *storage.Store) *Manager
 
 // 라이프사이클
 func (m *Manager) Create(workingDir, model string) (*Session, error)
-func (m *Manager) Send(sessionID, message string) error
 func (m *Manager) End(sessionID string) error
+
+// 메시지 전달 (inbox → tmux)
+// 1. store.Tx() 내에서: DequeueMessage + MarkProcessed + UpdateSession(active, last_prompt)
+// 2. 트랜잭션 외부에서: tmux send-keys
+// idle 세션에만 호출 가능. active/ended 세션이면 에러 반환.
+func (m *Manager) DeliverNext(sessionID string) error
 
 // 상태
 func (m *Manager) Get(sessionID string) (*Session, error)
@@ -216,6 +221,12 @@ func (m *Manager) ListActive() ([]*Session, error)
 // 복구
 func (m *Manager) RecoverAll() error
 
-// 신호 처리
-func (m *Manager) HandleDone(sessionID string) (string, error)
+// 신호 처리 (FIFO goroutine에서 호출)
+// 1. 500ms 딜레이 후 capture-pane
+// 2. store.Tx() 내에서: UpdateSession(last_result) + store.CreateOutbox() + DequeueMessage 확인
+//    ├─ inbox 있음 → MarkProcessed + status 유지 (active)
+//    └─ inbox 없음 → status → idle
+// 3. inbox가 있었으면 트랜잭션 외부에서 tmux send-keys
+// 반환: capture-pane 결과 (outbox 생성에 사용됨)
+func (m *Manager) HandleDone(sessionID string) error
 ```
