@@ -167,7 +167,11 @@ func newUpdateCmd() *cobra.Command {
 		Use:   "update",
 		Short: "Update to the latest version",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return updater.New(version).RunUpdate()
+			if err := updater.New(version).RunUpdate(); err != nil {
+				return err
+			}
+			service.RestartAfterUpdate()
+			return nil
 		},
 	}
 }

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.4] - 2026-02-22
+
+### Added
+- `update`: detect installed service and guide restart after update
+  - Linux: prints `sudo systemctl restart claude-postman` (requires root)
+  - macOS: automatically restarts via launchctl
+
 ## [v0.4.3] - 2026-02-22
 
 ### Added
@@ -116,7 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hooks: golangci-lint, go-build, go-test
 - 79+ unit tests across all modules
 
-[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.4...HEAD
+[v0.4.4]: https://github.com/yhzion/claude-postman/compare/v0.4.3...v0.4.4
 [v0.4.3]: https://github.com/yhzion/claude-postman/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/yhzion/claude-postman/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/yhzion/claude-postman/compare/v0.4.0...v0.4.1

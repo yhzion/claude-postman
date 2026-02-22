@@ -109,6 +109,48 @@ func UninstallService() error {
 	}
 }
 
+// RestartAfterUpdate restarts the service if installed.
+// On Linux (systemd), prints a sudo command since root is required.
+// On macOS (launchd), restarts directly.
+// Does nothing if no service is installed.
+func RestartAfterUpdate() {
+	switch runtime.GOOS {
+	case "linux":
+		restartSystemd()
+	case "darwin":
+		restartLaunchd()
+	}
+}
+
+func restartSystemd() {
+	if _, err := os.Stat(systemdPath); err != nil {
+		return // service not installed
+	}
+	bin, _ := os.Executable()
+	fmt.Println("\nService is installed. Restart to apply the update:")
+	fmt.Printf("  sudo systemctl restart claude-postman\n")
+	_ = bin // suppress unused warning if needed
+}
+
+func restartLaunchd() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", plistName)
+	if _, err := os.Stat(plistPath); err != nil {
+		return // service not installed
+	}
+	fmt.Print("\nRestarting service... ")
+	_ = exec.Command("launchctl", "stop", "com.claude-postman").Run()
+	if err := exec.Command("launchctl", "start", "com.claude-postman").Run(); err != nil {
+		fmt.Printf("✗ %v\n", err)
+		fmt.Println("  Run manually: launchctl stop com.claude-postman && launchctl start com.claude-postman")
+		return
+	}
+	fmt.Println("✅ restarted")
+}
+
 func installSystemd(bin string) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("root privileges required.\n  Run: sudo %s install-service", bin)
