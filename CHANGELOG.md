@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.2] - 2026-02-22
+
+### Added
+- `init`: send session template email after setup completes
+  - Template email is sent to the user's own address via SMTP
+  - Template Message-ID stored in DB for security verification
+  - Users forward this email to create new Claude Code sessions (template reference + From verification)
+
 ## [v0.4.1] - 2026-02-22
 
 ### Fixed
@@ -101,7 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hooks: golangci-lint, go-build, go-test
 - 79+ unit tests across all modules
 
-[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.2...HEAD
+[v0.4.2]: https://github.com/yhzion/claude-postman/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/yhzion/claude-postman/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/yhzion/claude-postman/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/yhzion/claude-postman/compare/v0.3.0...v0.3.1

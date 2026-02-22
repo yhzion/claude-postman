@@ -75,7 +75,8 @@ func ConfigDir() string {
 }
 
 // RunInit는 대화형 설정 마법사를 실행한다.
-func RunInit() error {
+// 성공 시 저장된 Config를 반환한다.
+func RunInit() (*Config, error) {
 	w := &initWizard{
 		in:  os.Stdin,
 		out: os.Stdout,

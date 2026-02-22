@@ -50,9 +50,41 @@ func newInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Setup configuration wizard",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return config.RunInit()
+			cfg, err := config.RunInit()
+			if err != nil {
+				return err
+			}
+			sendInitTemplate(cfg)
+			fmt.Println("\nRun 'claude-postman serve' to start.")
+			return nil
 		},
 	}
+}
+
+// sendInitTemplate sends the session creation template email after init.
+// Errors are logged but do not fail the init process.
+func sendInitTemplate(cfg *config.Config) {
+	store, err := storage.New(cfg.General.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n⚠ Could not open database: %v\n", err)
+		return
+	}
+	defer store.Close()
+
+	if err := store.Migrate(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n⚠ Could not migrate database: %v\n", err)
+		return
+	}
+
+	mailer := email.New(&cfg.Email, store)
+	fmt.Print("\nSending session template email... ")
+	if _, err := mailer.SendTemplate(); err != nil {
+		fmt.Fprintf(os.Stderr, "✗ %v\n", err)
+		fmt.Fprintln(os.Stderr, "  You can re-run 'claude-postman init' to retry.")
+		return
+	}
+	fmt.Println("✅ sent")
+	fmt.Println("  Forward this email to create new Claude Code sessions.")
 }
 
 func newServeCmd() *cobra.Command {

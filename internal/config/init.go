@@ -76,7 +76,8 @@ func (w *initWizard) newPasswordInput() *huh.Input {
 }
 
 // run은 3단계 마법사 흐름을 실행한다.
-func (w *initWizard) run() error {
+// 성공 시 저장된 Config를 반환한다.
+func (w *initWizard) run() (*Config, error) {
 	w.printf("\nClaude Postman Setup\n")
 	w.printf("====================\n\n")
 
@@ -94,24 +95,24 @@ func (w *initWizard) run() error {
 	// [1/3] Data Directory
 	w.printf("[1/3] Data Directory\n")
 	if err := w.stepDataDir(cfg); err != nil {
-		return err
+		return nil, err
 	}
 
 	// [2/3] Email Account
 	w.printf("\n[2/3] Email Account\n")
 	if err := w.stepEmail(cfg, existing); err != nil {
-		return err
+		return nil, err
 	}
 
 	// [3/3] Default Model
 	w.printf("\n[3/3] Default Model\n")
 	if err := w.stepModel(cfg, existing); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Save
 	if err := w.save(cfg); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Connection test
@@ -122,12 +123,11 @@ func (w *initWizard) run() error {
 		w.testConnection(cfg)
 	}
 
-	w.printf("\nRun 'claude-postman serve' to start.\n")
-	return nil
+	return cfg, nil
 }
 
 // runWithoutConnTest는 연결 테스트 없이 실행 (테스트용)
-func (w *initWizard) runWithoutConnTest() error {
+func (w *initWizard) runWithoutConnTest() (*Config, error) {
 	w.connTester = func(_ *Config) {} // no-op
 	return w.run()
 }

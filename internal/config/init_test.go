@@ -93,7 +93,7 @@ func TestWizardRun_FreshSetup(t *testing.T) {
 	}, "\n") + "\n"
 
 	w, _ := newTestWizard(input)
-	err := w.runWithoutConnTest()
+	_, err := w.runWithoutConnTest()
 	require.NoError(t, err)
 
 	// Verify saved config
@@ -137,7 +137,7 @@ func TestWizardRun_RerunPreservesExisting(t *testing.T) {
 	}, "\n") + "\n"
 
 	w, _ := newTestWizard(input)
-	err := w.runWithoutConnTest()
+	_, err := w.runWithoutConnTest()
 	require.NoError(t, err)
 
 	// Verify existing values are preserved
