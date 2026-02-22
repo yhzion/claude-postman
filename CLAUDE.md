@@ -34,20 +34,35 @@ Claude Code와 사용자 사이를 **이메일로 중계**하는 서버 프로�
 - Effective Go 준수
 - 에러 처리: 명시적 반환, panic 금지
 
-### 구조 (예정)
+### 품질 관리
+- **pre-commit**: 포맷팅, 기본 검사 (빠름)
+- **pre-push**: 린팅, 빌드, 테스트 (느림)
+- **golangci-lint**: 통합 린터
+
+### 테스트
+- `testing` + `testify` + `go-cmp`
+- 단위 테스트: 각 패키지
+- 통합 테스트: `_test/integration`
+
+## 프로젝트 구조
+
 ```
 claude-postman/
 ├── cmd/
 │   └── claude-postman/    # main 진입점
 ├── internal/
-│   ├── email/             # 이메일 송수신
+│   ├── email/             # 이메일 송수신 (SMTP/IMAP)
 │   ├── session/           # tmux 세션 관리
 │   ├── storage/           # SQLite 저장소
-│   └── service/           # 시스템 서비스
-├── pkg/
-│   └── ...                # 재사용 가능한 패키지
+│   └── service/           # 시스템 서비스 (systemd/launchd)
+├── pkg/                   # 재사용 가능한 패키지
 ├── configs/               # 설정 파일 예시
-└── docs/                  # 문서
+├── docs/                  # 문서
+├── .golangci.yml          # 린터 설정
+├── .pre-commit-config.yaml # Git 훅 설정
+├── go.mod
+├── go.sum
+└── CLAUDE.md
 ```
 
 ## 환경 변수

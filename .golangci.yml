@@ -1,0 +1,55 @@
+# golangci-lint 설정
+# LLM 바이브코딩을 위한 품질 관리
+
+linters:
+  enable:
+    # LLM 실수 방지 (필수)
+    - unused        # 데드 코드
+    - dupl          # 중복 코드
+    - errcheck      # 에러 무시 방지
+
+    # 코드 품질
+    - funlen        # 함수 길이 제한
+    - gocyclo       # 순환 복잡도
+    - gocognit      # 인지 복잡도
+    - revive        # 스타일 린터 (golint 대체)
+
+    # 보안
+    - gosec         # 보안 취약점
+
+    # 기본
+    - gofmt
+    - goimports
+    - govet
+    - staticcheck
+    - misspell      # 오타
+    - whitespace    # 공백
+
+linters-settings:
+  funlen:
+    lines: 50
+    statements: 30
+  gocyclo:
+    min-complexity: 12
+  gocognit:
+    min-complexity: 15
+  dupl:
+    threshold: 80
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+    - testdata
+
+issues:
+  exclude-rules:
+    # 테스트 파일은 일부 린트 제외
+    - path: _test\.go
+      linters:
+        - funlen
+        - dupl

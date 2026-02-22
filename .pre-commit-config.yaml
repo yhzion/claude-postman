@@ -1,0 +1,74 @@
+# pre-commit 설정
+# 100% 터미널 바이브코딩용
+
+repos:
+  # === pre-commit (빠른 것, 1-3초) ===
+
+  # 1. 파일 레벨 검사
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # 2. Go 포맷팅
+  - repo: https://github.com/Bahjat/pre-commit-golang
+    rev: v1.0.3
+    hooks:
+      - id: go-fmt
+      - id: go-imports
+
+  # 3. 정적 분석
+  - repo: https://github.com/Bahjat/pre-commit-golang
+    rev: v1.0.3
+    hooks:
+      - id: go-vet
+
+  # === pre-push (느린 것, 30-60초) ===
+
+  # 4. 통합 린팅
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.55.2
+    hooks:
+      - id: golangci-lint
+        stages: [pre-push]
+
+  # 5. 빌드 확인
+  - repo: local
+    hooks:
+      - id: go-build
+        name: go-build
+        entry: go build ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
+
+  # 6. 테스트
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go-test
+        entry: go test -short ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
+
+  # 7. 전체 테스트 (main 브랜치 push 시)
+  - repo: local
+    hooks:
+      - id: go-test-full
+        name: go-test-full
+        entry: go test -race -cover ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
+        # main 브랜치에서만 전체 테스트
