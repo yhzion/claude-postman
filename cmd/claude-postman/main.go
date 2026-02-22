@@ -78,7 +78,7 @@ func newDoctorCmd() *cobra.Command {
 func newInstallServiceCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install-service",
-		Short: "Register as a system service",
+		Short: "Register as a system service (Linux requires sudo)",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return service.InstallService()
 		},
@@ -88,7 +88,7 @@ func newInstallServiceCmd() *cobra.Command {
 func newUninstallServiceCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall-service",
-		Short: "Remove system service",
+		Short: "Remove system service (Linux requires sudo)",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return service.UninstallService()
 		},

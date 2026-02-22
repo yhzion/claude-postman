@@ -93,6 +93,10 @@ func UninstallService() error {
 }
 
 func installSystemd(bin string) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("root privileges required.\n  Run: sudo claude-postman install-service")
+	}
+
 	u, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("get current user: %w", err)
@@ -123,6 +127,10 @@ func installSystemd(bin string) error {
 }
 
 func uninstallSystemd() error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("root privileges required.\n  Run: sudo claude-postman uninstall-service")
+	}
+
 	cmds := [][]string{
 		{"systemctl", "stop", "claude-postman"},
 		{"systemctl", "disable", "claude-postman"},
