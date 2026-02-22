@@ -9,19 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
+        goarch: [amd64, arm64]
 
     steps:
       - uses: actions/checkout@v4
@@ -31,36 +23,58 @@ jobs:
           go-version: '1.24'
 
       - name: Install cross-compiler
-        if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
+        if: matrix.goarch == 'arm64'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '1'
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          BINARY="claude-postman-${GOOS}-${GOARCH}"
-
-          if [ "${GOOS}" = "linux" ] && [ "${GOARCH}" = "arm64" ]; then
+          if [ "${GOARCH}" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
           fi
 
-          if [ "${GOOS}" = "darwin" ]; then
-            export CGO_ENABLED=0
-          fi
-
           go build -ldflags "-s -w -X main.version=${TAG_NAME}" \
-            -o "dist/${BINARY}" ./cmd/claude-postman
+            -o "dist/claude-postman-linux-${GOARCH}" ./cmd/claude-postman
 
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-postman-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: claude-postman-linux-${{ matrix.goarch }}
+          path: dist/
+
+  build-darwin:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          go build -ldflags "-s -w -X main.version=${TAG_NAME}" \
+            -o "dist/claude-postman-darwin-${GOARCH}" ./cmd/claude-postman
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-postman-darwin-${{ matrix.goarch }}
           path: dist/
 
   release:
-    needs: build
+    needs: [build-linux, build-darwin]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

@@ -1,66 +1,232 @@
 # claude-postman
 
-Claude Code와 사용자 사이를 이메일로 중계하는 서버 프로그램.
+[![Release](https://img.shields.io/github/v/release/yhzion/claude-postman?style=flat-square)](https://github.com/yhzion/claude-postman/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/yhzion/claude-postman/release.yml?style=flat-square&label=build)](https://github.com/yhzion/claude-postman/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yhzion/claude-postman?style=flat-square)](https://goreportcard.com/report/github.com/yhzion/claude-postman)
+[![Go](https://img.shields.io/badge/go-1.24+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![Downloads](https://img.shields.io/github/downloads/yhzion/claude-postman/total?style=flat-square&color=brightgreen)](https://github.com/yhzion/claude-postman/releases)
+[![License](https://img.shields.io/github/license/yhzion/claude-postman?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/yhzion/claude-postman)
+
+Email relay server between you and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
 ```
-사용자 (이메일) ←→ claude-postman (중계 서버) ←→ Claude Code (tmux 세션)
+You (Email) ←→ claude-postman (Relay Server) ←→ Claude Code (tmux session)
 ```
 
-## 특징
+Send an email, Claude Code works on it, and you get the result back — all via email.
 
-- **이메일 기반**: Claude Code를 이메일로 원격 제어
-- **tmux 세션 관리**: 각 작업을 독립적인 tmux 세션에서 실행
-- **오프라인 대응**: 네트워크 끊겨도 큐에 저장 후 온라인 시 발송
-- **HTML 리치 텍스트**: 가독성 좋은 이메일 보고 (Markdown → HTML)
+## Table of Contents
 
-## 요구사항
+- [About](#about)
+- [Installing and Updating](#installing-and-updating)
+  - [Install Script](#install-script)
+  - [Manual Install](#manual-install)
+  - [Updating](#updating)
+  - [Verify Installation](#verify-installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Configuration](#configuration)
+  - [Config File](#config-file)
+  - [Environment Variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Requirements](#requirements)
+- [Documentation](#documentation)
+- [License](#license)
 
-- Mac 또는 Linux
-- Go 1.24+
-- tmux
-- Claude Code
-- 이메일 계정 (SMTP/IMAP)
+## About
 
-## 설치
+claude-postman is a background server that bridges email and Claude Code via tmux sessions.
+
+- **Email-based control**: Operate Claude Code remotely through email
+- **tmux session management**: Each task runs in an isolated tmux session
+- **Offline queue**: Messages are queued and sent when the network is back
+- **Rich HTML reports**: Markdown → HTML email with syntax-highlighted code blocks
+- **Self-update**: Built-in `update` command to stay current
+- **System service**: Register as systemd (Linux) or launchd (macOS) service
+
+## Installing and Updating
+
+### Install Script
 
 ```bash
-curl -fsSL https://get.claude-postman.dev | bash
+curl -fsSL https://raw.githubusercontent.com/yhzion/claude-postman/main/install.sh | bash
 ```
 
-## 빠른 시작
+The script automatically detects your OS and architecture, downloads the latest release binary, and installs it to `/usr/local/bin`.
+
+### Manual Install
+
+Build from source (requires Go 1.24+ and CGO):
 
 ```bash
-claude-postman init              # 설정 마법사
-claude-postman serve             # 서버 실행
-claude-postman doctor            # 환경 진단
+git clone https://github.com/yhzion/claude-postman.git
+cd claude-postman
+go build -o claude-postman ./cmd/claude-postman
+sudo mv claude-postman /usr/local/bin/
 ```
 
-> CLI 전체 구조는 [06-service.md](docs/architecture/06-service.md) 참조.
+### Updating
 
-## 설정
+```bash
+claude-postman update
+```
 
-`~/.claude-postman/config.toml`에 이메일 자격 증명과 설정을 저장합니다.
-환경변수(`CLAUDE_POSTMAN_` 접두사)로 오버라이드 가능합니다.
+This checks the latest GitHub release and replaces the current binary. When you run any command, claude-postman also prints a notification if a newer version is available.
 
-> 설정 상세: [02-config.md](docs/architecture/02-config.md)
+### Verify Installation
 
-## 문서
+```bash
+claude-postman --version
+```
 
-### 아키텍처 설계 (SSOT)
+## Quick Start
 
-- [01. tmux 출력 캡처](docs/architecture/01-tmux-output-capture.md)
+```bash
+# 1. Setup configuration (interactive wizard)
+claude-postman init
+
+# 2. Check environment
+claude-postman doctor
+
+# 3. Start the relay server
+claude-postman serve
+```
+
+## Commands
+
+```
+claude-postman                     # Show help
+claude-postman --version           # Show version
+
+claude-postman init                # Setup configuration wizard
+claude-postman serve               # Start the relay server (foreground)
+claude-postman doctor              # Check environment and diagnose issues
+claude-postman doctor --fix        # Diagnose + auto-fix where possible
+
+claude-postman install-service     # Register as system service
+claude-postman uninstall-service   # Remove system service
+claude-postman update              # Update to the latest version
+```
+
+### `doctor` checks
+
+| Check | Description | `--fix` |
+|-------|-------------|---------|
+| Config | `config.toml` exists and is valid | — (run `init`) |
+| Data directory | Data dir exists | Creates it |
+| Database | SQLite file + migration status | Initializes DB |
+| tmux | `tmux -V` available | — (install manually) |
+| Claude Code | `claude --version` available | — (install manually) |
+| SMTP | TCP connection to SMTP server | — (check settings) |
+| IMAP | TCP connection to IMAP server | — (check settings) |
+| Service | systemd/launchd registration | — (run `install-service`) |
+
+Example output:
+
+```
+$ claude-postman doctor
+
+Checking environment...
+
+  ✅ Config: ~/.claude-postman/config.toml
+  ✅ Data directory: ~/.claude-postman/data
+  ✅ Database: OK (version 1)
+  ❌ tmux: not found
+  ✅ Claude Code: v2.1.47
+  ✅ SMTP: smtp.gmail.com:587 (connected)
+  ✅ IMAP: imap.gmail.com:993 (connected)
+  ⚠️  Service: not registered
+
+  ❌ tmux: Install with 'sudo apt install tmux' or 'brew install tmux'
+  ⚠️  Service: Run 'sudo claude-postman install-service' to register
+```
+
+## Configuration
+
+### Config File
+
+Created by `claude-postman init` at `~/.claude-postman/config.toml`:
+
+```toml
+[general]
+data_dir = "~/.claude-postman/data"
+model = "sonnet"
+poll_interval_sec = 30
+session_timeout_min = 30
+
+[email]
+user = "you@gmail.com"
+app_password = "xxxx-xxxx-xxxx-xxxx"
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+imap_host = "imap.gmail.com"
+imap_port = 993
+```
+
+### Environment Variables
+
+Every config value can be overridden with `CLAUDE_POSTMAN_` prefixed environment variables:
+
+```bash
+CLAUDE_POSTMAN_DATA_DIR=/path/to/data
+CLAUDE_POSTMAN_MODEL=sonnet
+CLAUDE_POSTMAN_POLL_INTERVAL=30
+CLAUDE_POSTMAN_SESSION_TIMEOUT=30
+CLAUDE_POSTMAN_EMAIL_USER=you@gmail.com
+CLAUDE_POSTMAN_EMAIL_PASSWORD=app-password
+CLAUDE_POSTMAN_SMTP_HOST=smtp.gmail.com
+CLAUDE_POSTMAN_SMTP_PORT=587
+CLAUDE_POSTMAN_IMAP_HOST=imap.gmail.com
+CLAUDE_POSTMAN_IMAP_PORT=993
+```
+
+## Troubleshooting
+
+Run the built-in diagnostic tool:
+
+```bash
+claude-postman doctor
+```
+
+For automatic fixes (creates missing directories, initializes database):
+
+```bash
+claude-postman doctor --fix
+```
+
+| Issue | Solution |
+|-------|----------|
+| `Config: not found` | Run `claude-postman init` |
+| `tmux: not found` | `sudo apt install tmux` or `brew install tmux` |
+| `Claude Code: not found` | Install from [anthropic.com](https://docs.anthropic.com/en/docs/claude-code) |
+| `SMTP: connection failed` | Check email credentials and firewall |
+| `IMAP: connection failed` | Check IMAP settings, enable "Less secure apps" or use App Password |
+
+## Requirements
+
+- **OS**: macOS or Linux
+- **tmux**: Session management
+- **Claude Code**: AI coding assistant
+- **Email account**: Gmail recommended (SMTP/IMAP with App Password)
+
+## Documentation
+
+### Architecture (SSOT)
+
+- [01. tmux Output Capture](docs/architecture/01-tmux-output-capture.md)
 - [02. Config](docs/architecture/02-config.md)
 - [03. Storage (SQLite)](docs/architecture/03-storage.md)
-- [04. Session 관리](docs/architecture/04-session.md)
+- [04. Session Management](docs/architecture/04-session.md)
 - [05. Email (SMTP/IMAP)](docs/architecture/05-email.md)
 - [06. CLI, Service, Doctor](docs/architecture/06-service.md)
 
-### 참고
+### References
 
-- [기획 문서](docs/ideas.md)
-- [유즈케이스](docs/usecases/SUMMARY.md)
-- [기술 스택 결정](docs/tech-stack/)
+- [Ideas & Planning](docs/ideas.md)
+- [Use Cases](docs/usecases/SUMMARY.md)
+- [Tech Stack Decisions](docs/tech-stack/)
 
-## 라이선스
+## License
 
-MIT
+[MIT](LICENSE)
