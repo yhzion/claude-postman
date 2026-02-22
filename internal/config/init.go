@@ -291,7 +291,7 @@ func testSMTP(cfg *Config) error {
 		return err
 	}
 	defer c.Close()
-	if err := c.StartTLS(&tls.Config{ServerName: cfg.Email.SMTPHost}); err != nil {
+	if err := c.StartTLS(&tls.Config{ServerName: cfg.Email.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil { //nolint:gosec // TLS 1.2 minimum
 		return err
 	}
 	if err := c.Auth(smtp.PlainAuth("", cfg.Email.User, cfg.Email.AppPassword, cfg.Email.SMTPHost)); err != nil {
