@@ -33,6 +33,7 @@ type sessionMgr interface {
 type mailPoller interface {
 	Poll() ([]*email.IncomingMessage, error)
 	FlushOutbox() error
+	SendTemplate() (string, error)
 }
 
 type server struct {
@@ -62,6 +63,14 @@ func (s *server) run(ctx context.Context) error {
 	if err := os.MkdirAll(fifoDir, 0o700); err != nil {
 		return fmt.Errorf("create FIFO dir: %w", err)
 	}
+
+	// Send template email to verify SMTP and ensure user has a fresh template.
+	// Serve will not start if this fails.
+	msgID, err := s.mailer.SendTemplate()
+	if err != nil {
+		return fmt.Errorf("send template email: %w", err)
+	}
+	slog.Info("template email sent", "message_id", msgID)
 
 	if err := s.mgr.RecoverAll(); err != nil {
 		return fmt.Errorf("recover sessions: %w", err)

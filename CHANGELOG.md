@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.3] - 2026-02-22
+
+### Added
+- `send-template` command: manually send a session creation template email
+- `serve`: send template email on every startup as SMTP verification gate
+  - Serve refuses to start if template email fails (ensures SMTP is working)
+
 ## [v0.4.2] - 2026-02-22
 
 ### Added
@@ -109,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hooks: golangci-lint, go-build, go-test
 - 79+ unit tests across all modules
 
-[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.3...HEAD
+[v0.4.3]: https://github.com/yhzion/claude-postman/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/yhzion/claude-postman/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/yhzion/claude-postman/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/yhzion/claude-postman/compare/v0.3.1...v0.4.0

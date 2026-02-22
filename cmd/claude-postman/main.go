@@ -37,6 +37,7 @@ func newRootCmd() *cobra.Command {
 		newInitCmd(),
 		newServeCmd(),
 		newDoctorCmd(),
+		newSendTemplateCmd(),
 		newInstallServiceCmd(),
 		newUninstallServiceCmd(),
 		newUpdateCmd(),
@@ -85,6 +86,40 @@ func sendInitTemplate(cfg *config.Config) {
 	}
 	fmt.Println("✅ sent")
 	fmt.Println("  Forward this email to create new Claude Code sessions.")
+}
+
+func newSendTemplateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "send-template",
+		Short: "Send a session creation template email",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			store, err := storage.New(cfg.General.DataDir)
+			if err != nil {
+				return fmt.Errorf("open database: %w", err)
+			}
+			defer store.Close()
+
+			if err := store.Migrate(); err != nil {
+				return fmt.Errorf("migrate database: %w", err)
+			}
+
+			mailer := email.New(&cfg.Email, store)
+			fmt.Print("Sending session template email... ")
+			msgID, err := mailer.SendTemplate()
+			if err != nil {
+				return fmt.Errorf("send template: %w", err)
+			}
+			fmt.Println("✅ sent")
+			fmt.Printf("  Message-ID: %s\n", msgID)
+			fmt.Println("  Forward this email to create new Claude Code sessions.")
+			return nil
+		},
+	}
 }
 
 func newServeCmd() *cobra.Command {

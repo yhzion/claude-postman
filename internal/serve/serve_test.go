@@ -64,10 +64,11 @@ func (m *mockMgr) RecoverAll() error {
 }
 
 type mockMail struct {
-	pollFn     func() ([]*email.IncomingMessage, error)
-	flushFn    func() error
-	pollCount  atomic.Int32
-	flushCount atomic.Int32
+	pollFn         func() ([]*email.IncomingMessage, error)
+	flushFn        func() error
+	sendTemplateFn func() (string, error)
+	pollCount      atomic.Int32
+	flushCount     atomic.Int32
 }
 
 func (m *mockMail) Poll() ([]*email.IncomingMessage, error) {
@@ -84,6 +85,13 @@ func (m *mockMail) FlushOutbox() error {
 		return m.flushFn()
 	}
 	return nil
+}
+
+func (m *mockMail) SendTemplate() (string, error) {
+	if m.sendTemplateFn != nil {
+		return m.sendTemplateFn()
+	}
+	return "<test-template@claude-postman>", nil
 }
 
 // --- Helpers ---
