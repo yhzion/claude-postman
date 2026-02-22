@@ -124,12 +124,11 @@ func RestartAfterUpdate() {
 
 func restartSystemd() {
 	if _, err := os.Stat(systemdPath); err != nil {
-		return // service not installed
+		fmt.Println("\nIf claude-postman serve is running, restart it to apply the update.")
+		return
 	}
-	bin, _ := os.Executable()
 	fmt.Println("\nService is installed. Restart to apply the update:")
-	fmt.Printf("  sudo systemctl restart claude-postman\n")
-	_ = bin // suppress unused warning if needed
+	fmt.Println("  sudo systemctl restart claude-postman")
 }
 
 func restartLaunchd() {
@@ -139,7 +138,8 @@ func restartLaunchd() {
 	}
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", plistName)
 	if _, err := os.Stat(plistPath); err != nil {
-		return // service not installed
+		fmt.Println("\nIf claude-postman serve is running, restart it to apply the update.")
+		return
 	}
 	fmt.Print("\nRestarting service... ")
 	_ = exec.Command("launchctl", "stop", "com.claude-postman").Run()
