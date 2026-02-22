@@ -107,6 +107,8 @@ claude-postman doctor --fix        # Diagnose + auto-fix where possible
 claude-postman install-service     # Register as system service
 claude-postman uninstall-service   # Remove system service
 claude-postman update              # Update to the latest version
+claude-postman uninstall           # Remove claude-postman completely
+claude-postman uninstall --yes     # Remove without confirmation
 ```
 
 ### `doctor` checks

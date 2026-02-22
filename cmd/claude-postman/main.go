@@ -40,6 +40,7 @@ func newRootCmd() *cobra.Command {
 		newInstallServiceCmd(),
 		newUninstallServiceCmd(),
 		newUpdateCmd(),
+		newUninstallCmd(),
 	)
 	return root
 }
@@ -102,6 +103,56 @@ func newUpdateCmd() *cobra.Command {
 			return updater.New(version).RunUpdate()
 		},
 	}
+}
+
+func newUninstallCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove claude-postman from this system",
+	}
+	yes := cmd.Flags().Bool("yes", false, "Skip confirmation prompt")
+	cmd.RunE = func(_ *cobra.Command, _ []string) error {
+		return runUninstall(*yes)
+	}
+	return cmd
+}
+
+func runUninstall(yes bool) error {
+	if !yes {
+		fmt.Print("This will remove claude-postman, its config, and all data. Continue? [y/N] ")
+		var answer string
+		fmt.Scanln(&answer) //nolint:errcheck // user input prompt, error is not actionable
+		if answer != "y" && answer != "Y" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	// 1. Stop and remove system service
+	fmt.Println("Removing system service...")
+	_ = service.UninstallService()
+
+	// 2. Remove config/data directory
+	configDir := config.ConfigDir()
+	if configDir != "" {
+		fmt.Printf("Removing %s...\n", configDir)
+		if err := os.RemoveAll(configDir); err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: %v\n", err)
+		}
+	}
+
+	// 3. Remove binary
+	bin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve binary path: %w", err)
+	}
+	fmt.Printf("Removing %s...\n", bin)
+	if err := os.Remove(bin); err != nil {
+		return fmt.Errorf("remove binary: %w (try: sudo claude-postman uninstall --yes)", err)
+	}
+
+	fmt.Println("claude-postman has been uninstalled.")
+	return nil
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
