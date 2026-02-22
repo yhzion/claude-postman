@@ -2,7 +2,7 @@
 set -e
 
 REPO="yhzion/claude-postman"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${HOME}/.local/bin"
 BINARY="claude-postman"
 
 # Detect OS
@@ -42,12 +42,21 @@ if ! curl -fsSL "$URL" -o "$TMP"; then
 fi
 chmod +x "$TMP"
 
-# Install (may need sudo)
-if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMP" "${INSTALL_DIR}/${BINARY}"
-else
-  echo "  Need sudo to install to ${INSTALL_DIR}"
-  sudo mv "$TMP" "${INSTALL_DIR}/${BINARY}"
-fi
+# Install
+mkdir -p "$INSTALL_DIR"
+mv "$TMP" "${INSTALL_DIR}/${BINARY}"
 
 echo "Installed: ${INSTALL_DIR}/${BINARY} ${TAG}"
+
+# Check PATH
+case ":$PATH:" in
+  *":${INSTALL_DIR}:"*) ;;
+  *)
+    echo ""
+    echo "  WARNING: ${INSTALL_DIR} is not in your PATH."
+    echo "  Add this to your shell profile (~/.bashrc or ~/.zshrc):"
+    echo ""
+    echo "    export PATH=\"\${HOME}/.local/bin:\${PATH}\""
+    echo ""
+    ;;
+esac
