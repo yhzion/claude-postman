@@ -257,4 +257,3 @@ curl -fsSL https://get.claude-postman.dev | bash
 - SMTP 설정 (발송용)
 - IMAP 설정 (수신용)
 - 별도 config 파일 또는 환경 변수
-

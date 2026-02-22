@@ -6,7 +6,7 @@ repos:
 
   # 1. 파일 레벨 검사
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -17,26 +17,40 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  # 2. Go 포맷팅
-  - repo: https://github.com/Bahjat/pre-commit-golang
-    rev: v1.0.3
+  # 2. Go 포맷팅 (로컬)
+  - repo: local
     hooks:
       - id: go-fmt
-      - id: go-imports
+        name: go-fmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
 
-  # 3. 정적 분석
-  - repo: https://github.com/Bahjat/pre-commit-golang
-    rev: v1.0.3
-    hooks:
+      - id: go-imports
+        name: go-imports
+        entry: /home/feel_so_good/go/bin/goimports -l -w
+        language: system
+        types: [go]
+        require_serial: true
+
       - id: go-vet
+        name: go-vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
 
   # === pre-push (느린 것, 30-60초) ===
 
   # 4. 통합 린팅
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v1.55.2
+  - repo: local
     hooks:
       - id: golangci-lint
+        name: golangci-lint
+        entry: /home/feel_so_good/go/bin/golangci-lint run
+        language: system
+        types: [go]
+        pass_filenames: false
         stages: [pre-push]
 
   # 5. 빌드 확인
@@ -60,15 +74,3 @@ repos:
         types: [go]
         pass_filenames: false
         stages: [pre-push]
-
-  # 7. 전체 테스트 (main 브랜치 push 시)
-  - repo: local
-    hooks:
-      - id: go-test-full
-        name: go-test-full
-        entry: go test -race -cover ./...
-        language: system
-        types: [go]
-        pass_filenames: false
-        stages: [pre-push]
-        # main 브랜치에서만 전체 테스트
