@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.4.1] - 2026-02-22
 
 ### Fixed
-- `install-service` / `uninstall-service`: show actionable `sudo` hint instead of raw "permission denied" on Linux
+- `install-service` / `uninstall-service`: show actionable `sudo` hint with absolute binary path instead of raw "permission denied" on Linux
 
 ## [v0.4.0] - 2026-02-22
 
