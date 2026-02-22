@@ -69,7 +69,9 @@ claude-postman/
 │   └── claude-postman/    # main 진입점
 ├── internal/
 │   ├── config/            # 설정 로딩, init 마법사
+│   ├── doctor/            # 환경 진단 (doctor 커맨드)
 │   ├── email/             # 이메일 송수신 (SMTP/IMAP)
+│   ├── serve/             # 메인 루프 (serve 커맨드)
 │   ├── session/           # tmux 세션 관리
 │   ├── storage/           # SQLite 저장소
 │   └── service/           # 시스템 서비스 (systemd/launchd)
@@ -90,6 +92,8 @@ config.toml 값을 환경변수로 오버라이드 가능. 자세한 내용은 [
 ```bash
 CLAUDE_POSTMAN_DATA_DIR=/path/to/data
 CLAUDE_POSTMAN_MODEL=sonnet
+CLAUDE_POSTMAN_POLL_INTERVAL=30
+CLAUDE_POSTMAN_SESSION_TIMEOUT=30
 CLAUDE_POSTMAN_EMAIL_USER=user@gmail.com
 CLAUDE_POSTMAN_EMAIL_PASSWORD=app-password
 CLAUDE_POSTMAN_SMTP_HOST=smtp.gmail.com

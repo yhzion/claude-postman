@@ -37,6 +37,7 @@ claude-postman serve    # 서버 실행
 data_dir = "/home/user/.claude-postman/data"
 default_model = "sonnet"    # sonnet | opus | haiku
 poll_interval_sec = 30      # IMAP 폴링 주기 (초)
+session_timeout_min = 30    # 세션 타임아웃 (분). FIFO 신호 미수신 시 폴백
 
 [email]
 provider = "gmail"              # gmail | outlook | other
@@ -67,6 +68,7 @@ config.toml 값을 환경변수로 덮어쓸 수 있다.
 | `CLAUDE_POSTMAN_IMAP_HOST` | `email.imap_host` |
 | `CLAUDE_POSTMAN_IMAP_PORT` | `email.imap_port` |
 | `CLAUDE_POSTMAN_POLL_INTERVAL` | `general.poll_interval_sec` |
+| `CLAUDE_POSTMAN_SESSION_TIMEOUT` | `general.session_timeout_min` |
 
 ---
 
@@ -240,9 +242,10 @@ type Config struct {
 }
 
 type GeneralConfig struct {
-    DataDir         string `toml:"data_dir"`
-    DefaultModel    string `toml:"default_model"`
-    PollIntervalSec int    `toml:"poll_interval_sec"`
+    DataDir           string `toml:"data_dir"`
+    DefaultModel      string `toml:"default_model"`
+    PollIntervalSec   int    `toml:"poll_interval_sec"`
+    SessionTimeoutMin int    `toml:"session_timeout_min"`
 }
 
 type EmailConfig struct {
@@ -254,4 +257,17 @@ type EmailConfig struct {
     User        string `toml:"user"`
     AppPassword string `toml:"app_password"`
 }
+```
+
+---
+
+## 8. Go 인터페이스
+
+```go
+// 설정 로딩 (serve, doctor 등에서 사용)
+func Load() (*Config, error)           // config.toml 읽기 + 환경변수 오버라이드 + 필수값 검증
+func ConfigDir() string                // ~/.claude-postman (설정 디렉터리 경로)
+
+// init 마법사
+func RunInit() error                   // 대화형 설정 마법사 실행 → config.toml 저장
 ```

@@ -114,13 +114,13 @@ FIFO에서 DONE:{UUID} 수신
   ↓
 500ms 딜레이 후 tmux capture-pane -t session-{UUID} -p -S -1000
   ↓
-DB 트랜잭션 시작:
-  1. last_result 업데이트
-  2. outbox에 이메일 추가
-  3. inbox에서 다음 미처리 메시지 조회 (FIFO 순서)
-     ├─ 있음 → processed=1, last_prompt 업데이트, status 유지 (active)
+store.Tx(ctx, func(tx *Store) error {
+  1. tx.UpdateSession(): last_result 업데이트
+  2. tx.CreateOutbox(): outbox에 이메일 추가
+  3. tx.DequeueMessage(sessionID): inbox에서 다음 미처리 메시지 조회
+     ├─ 있음 → tx.MarkProcessed(), last_prompt 업데이트, status 유지 (active)
      └─ 없음 → status → idle
-DB 트랜잭션 커밋
+})
   ↓
 다음 메시지가 있으면:
   tmux send-keys -t session-{UUID} "{message}" Enter

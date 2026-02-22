@@ -28,26 +28,30 @@
 ```
 폴링 루프 (config.poll_interval_sec 주기, 기본 30초)
   ↓
-IMAP 접속 (INBOX만, defer Close로 반드시 해제)
+Mailer.Poll() 호출:
+  IMAP 접속 (INBOX만, defer Close로 반드시 해제)
   ↓
-검색: SUBJECT "[claude-postman]"
+  검색: SUBJECT "[claude-postman]"
   ↓
-각 메일에 대해:
-  ├─ From != config.email.user → 무시
-  ├─ 세션 생성 요청 판별:
-  │   ├─ In-Reply-To/References가 템플릿 Message-ID 참조
-  │   │   → 새 세션 생성 흐름 (본문에서 디렉터리/모델/태스크 파싱)
-  │   └─ 아님 → 기존 세션 메시지
-  ├─ 기존 세션 매칭:
-  │   ├─ Session-ID 추출
-  │   ├─ 매칭 성공 → inbox 테이블에 삽입 (세션 상태 무관)
-  │   └─ 매칭 실패 → 무시
-  └─ 처리 완료 표시 (SEEN 플래그)
+  각 메일에 대해:
+    ├─ From != config.email.user → 무시
+    ├─ 세션 생성 요청 판별 (In-Reply-To/References → 템플릿 Message-ID)
+    ├─ 기존 세션 매칭 (Session-ID 추출)
+    └─ 처리 완료 표시 (SEEN 플래그)
   ↓
-idle 세션의 미처리 inbox 확인 → 있으면 세션에 전달
+  []*IncomingMessage 반환 (DB 조작 없음, 파싱만)
   ↓
-IMAP 연결 해제 (에러 발생 시에도 defer로 보장)
+serve 루프 (오케스트레이터):
+  각 IncomingMessage에 대해:
+    ├─ IsNewSession → mgr.Create() 호출 → 세션 생성
+    ├─ SessionID 있음 → store.EnqueueMessage() → inbox 삽입
+    └─ 매칭 실패 → 무시
+  ↓
+  idle 세션의 미처리 inbox 확인 → mgr.Send()로 세션 전달
 ```
+
+> **역할 분리**: Mailer는 IMAP/SMTP I/O만 담당. DB 삽입과 세션 관리는
+> serve 루프가 오케스트레이션. 이렇게 하면 Mailer→Manager 순환 의존 없음.
 
 > **IMAP 연결 정책**: 매 폴링 주기마다 새 연결을 생성하고 즉시 해제.
 > 연결 유지(keep-alive) 방식은 네트워크 단절 시 복구가 복잡하므로 채택하지 않음.
@@ -65,19 +69,21 @@ IMAP 연결 해제 (에러 발생 시에도 defer로 보장)
 이는 IMAP goroutine과 FIFO goroutine 사이의 경합 조건(lost wakeup)을 방지한다.
 
 ```
-메시지 수신 (세션 상태 무관)
+메시지 수신 (serve 루프에서 store.EnqueueMessage 호출)
   ↓
 inbox 테이블에 삽입 (session_id, body, processed=0)
   ↓
 소비 시점 (두 가지 트리거):
-  ├─ FIFO 완료 신호 수신 → idle 전환과 inbox 확인을 단일 트랜잭션으로
-  └─ IMAP 폴링 완료 후 → idle 세션의 미처리 inbox 확인
+  ├─ FIFO goroutine: DONE 수신 → store.Tx() 내에서
+  │   idle 전환 + inbox 확인을 단일 트랜잭션으로 처리
+  └─ IMAP goroutine: 폴링 완료 후 idle 세션의 미처리 inbox 확인
   ↓
-다음 메시지를 세션에 전달 → processed=1, 세션 → active
+다음 메시지를 mgr.Send()로 세션에 전달 → processed=1, 세션 → active
 ```
 
-> **경합 조건 방지**: idle 전환과 inbox 확인을 DB 트랜잭션 하나로 묶음.
-> "idle로 전환 직후 메시지 도착" 시나리오에서도 다음 폴링 주기에 감지.
+> **경합 조건 방지**: FIFO goroutine에서 idle 전환과 inbox 확인을
+> `store.Tx()`로 묶음. "idle로 전환 직후 메시지 도착" 시에도
+> 다음 IMAP 폴링 주기에 감지.
 
 ### 2.4 세션 생성 (템플릿 포워드)
 
@@ -239,7 +245,7 @@ DB template.message_id와 매칭
 
 ---
 
-## 6. HTML 변환
+## 6. 라이브러리 및 HTML 변환
 
 | 라이브러리 | 용도 |
 |-----------|------|
@@ -249,7 +255,7 @@ DB template.message_id와 매칭
 | `yuin/goldmark` | Markdown → HTML 변환 |
 | `alecthomas/chroma` | 코드 하이라이팅 |
 
-capture-pane 출력을 그대로 이메일 본문으로 사용.
+**HTML 변환 흐름**: capture-pane 출력을 그대로 이메일 본문으로 사용.
 시스템 프롬프트로 Claude Code에게 마크다운 형식 응답을 지시하므로,
 goldmark + chroma로 HTML 변환하여 리치 이메일 생성.
 
@@ -266,12 +272,13 @@ type Mailer struct {
 func New(cfg *config.EmailConfig, store *storage.Store) *Mailer
 
 // 수신 (매 호출 시 IMAP 연결 생성/해제, defer Close 보장)
+// Poll()은 IMAP에서 메시지를 가져와 파싱만 수행. DB 삽입이나 세션 전달은 하지 않음.
+// 호출자(serve 루프)가 반환값을 받아 inbox 삽입, 세션 생성 등을 오케스트레이션.
 func (m *Mailer) Poll() ([]*IncomingMessage, error)
-func (m *Mailer) DeliverPendingToIdleSessions() error  // idle 세션의 미처리 inbox 전달
 
-// 발송 (지수 백오프 재시도, 최대 5회)
-func (m *Mailer) Send(sessionID, subject, htmlBody string) error
-func (m *Mailer) FlushOutbox() error  // pending + next_retry_at <= now 조회
+// 발송 (outbox 테이블 경유)
+func (m *Mailer) Send(sessionID, subject, htmlBody string) error  // outbox에 pending으로 삽입
+func (m *Mailer) FlushOutbox() error  // pending + next_retry_at <= now 조회, 지수 백오프 재시도
 
 // 템플릿
 func (m *Mailer) SendTemplate() (messageID string, err error)
@@ -281,10 +288,10 @@ type IncomingMessage struct {
     From         string
     Subject      string
     Body         string
-    SessionID    string
+    SessionID    string  // 기존 세션 메시지일 때 세트
     MessageID    string
-    IsNewSession bool   // 템플릿 포워드 여부
-    WorkingDir   string // 템플릿에서 파싱된 디렉터리
-    Model        string // 템플릿에서 파싱된 모델
+    IsNewSession bool    // 템플릿 포워드 여부
+    WorkingDir   string  // IsNewSession=true일 때 파싱된 디렉터리
+    Model        string  // IsNewSession=true일 때 파싱된 모델
 }
 ```

@@ -40,7 +40,8 @@ pipe-pane과 capture-pane 폴링은 완료 감지가 불안정.
 │                                                  │
 │  - 세션별 FIFO 파일 감시                          │
 │  - 신호 수신 → capture-pane → 이메일 발송         │
-│  - 3개 goroutine: IMAP폴링, Outbox플러시, FIFO   │
+│  - 2+N goroutine: IMAP폴링, Outbox플러시,         │
+│    세션별 FIFO (N개)                               │
 └──────────┬───────────────────────────────────────┘
            │ 생성/관리
            ▼
@@ -148,7 +149,7 @@ Claude Code에 주입하는 시스템 프롬프트 핵심 내용:
 
 ```
 작업이 완료되면 반드시 다음 명령을 실행하세요:
-echo 'DONE:{SESSION_ID}' > /tmp/claude-postman/{SESSION_ID}.fifo
+echo 'DONE:{UUID}' > /tmp/claude-postman/{UUID}.fifo
 
 최종 응답에는 반드시 다음을 포함하세요:
 - 작업 과정 요약
@@ -167,10 +168,18 @@ echo 'DONE:{SESSION_ID}' > /tmp/claude-postman/{SESSION_ID}.fifo
 
 Claude Code가 신호를 보내지 못할 경우:
 
-1. 설정된 타임아웃 (기본: 30분, config에서 변경 가능) 경과
-2. `capture-pane`으로 현재 상태 확인
-3. 프롬프트 대기 상태면 완료로 간주
-4. 사용자에게 결과 발송
+1. 설정된 타임아웃 (config.session_timeout_min, 기본: 30분) 경과
+2. `capture-pane -t session-{UUID} -p`으로 현재 상태 확인
+3. 마지막 줄에 프롬프트 패턴 매칭 시 완료로 간주
+4. 사용자에게 결과 발송 (타임아웃으로 인한 캡처임을 명시)
+
+**프롬프트 대기 감지 패턴:**
+```
+capture-pane 출력의 마지막 비공백 줄이 다음 중 하나와 매칭:
+  - ">" (Claude Code 입력 프롬프트)
+  - "❯" (대체 프롬프트)
+  - "$" (셸 프롬프트 - Claude Code가 종료된 경우)
+```
 
 ### 5.2 신호 신뢰도
 

@@ -256,13 +256,21 @@ type Template struct {
 
 ```go
 type Store struct {
-    db *sql.DB
+    db   *sql.DB   // 일반 모드
+    tx   *sql.Tx   // 트랜잭션 모드 (Tx() 내부에서만 설정)
 }
+
+// Tx()는 fn에 트랜잭션용 Store 복사본을 전달.
+// fn 내부에서 호출하는 모든 CRUD 메서드는 tx를 사용.
+// fn이 에러를 반환하면 롤백, nil이면 커밋.
 
 // 초기화
 func New(dataDir string) (*Store, error)
 func (s *Store) Close() error
 func (s *Store) Migrate() error
+
+// 트랜잭션 (복합 연산용)
+func (s *Store) Tx(ctx context.Context, fn func(tx *Store) error) error  // fn 내부의 모든 DB 작업을 단일 트랜잭션으로 실행
 
 // Sessions
 func (s *Store) CreateSession(session *Session) error
