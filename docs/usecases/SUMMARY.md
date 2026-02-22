@@ -84,15 +84,15 @@ claude-postman은 **사용자와 Claude Code 사이를 중계**하는 역할.
 
 ## 4. 세션 라이프사이클
 
-### 4.1 세션 생성 (대화형)
+### 4.1 세션 생성 (템플릿 포워드)
 ```
-[사용자] /new
+[init] claude-postman init → 템플릿 이메일 발송
         ↓
-[질문 1] 시작 디렉터리 선택 (번호)
+[사용자] 템플릿 이메일을 포워드 (디렉터리/모델/태스크 편집)
         ↓
-[질문 2] 모델 선택 (Sonnet/Opus/Haiku)
+[검증] From 확인 + 템플릿 Message-ID 참조 확인
         ↓
-[질문 3] 이메일 주소 확인
+[파싱] 본문에서 Directory, Model, Task 추출
         ↓
 [완료] 세션 생성 → tmux 세션 시작 → Claude Code 실행
 ```
@@ -212,6 +212,7 @@ CREATE TABLE sessions (
 CREATE TABLE outbox (
     id              TEXT PRIMARY KEY,
     session_id      TEXT NOT NULL,
+    message_id      TEXT,              -- 이메일 Message-ID (스레드 매칭)
     subject         TEXT NOT NULL,
     body            TEXT NOT NULL,
     attachments     TEXT,               -- JSON
@@ -223,7 +224,29 @@ CREATE TABLE outbox (
 );
 ```
 
-### 8.3 DB 위치
+### 8.3 inbox 테이블 (대기열)
+```sql
+CREATE TABLE inbox (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    created_at      DATETIME NOT NULL,
+    processed       INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+```
+
+### 8.4 template 테이블
+```sql
+CREATE TABLE template (
+    id              TEXT PRIMARY KEY,
+    message_id      TEXT NOT NULL,     -- 템플릿 이메일의 Message-ID
+    created_at      DATETIME NOT NULL
+);
+```
+
+### 8.5 DB 위치
 - **환경 변수 필수**: `CLAUDE_POSTMAN_DATA_DIR`
 - 미설정 시 프로그램 실행 불가 (오류 발생)
 - 버전 관리 제외 (git ignore)
@@ -251,10 +274,7 @@ curl -fsSL https://get.claude-postman.dev | bash
 
 ## 10. 설정
 
-### 10.1 필수 환경 변수
-- `CLAUDE_POSTMAN_DATA_DIR` - 데이터 디렉터리
-
-### 10.2 이메일 설정
-- SMTP 설정 (발송용)
-- IMAP 설정 (수신용)
-- 별도 config 파일 또는 환경 변수
+### 10.1 설정 파일
+- `~/.claude-postman/config.toml` (init 마법사로 생성)
+- 환경변수로 오버라이드 가능 (접두사: `CLAUDE_POSTMAN_`)
+- 자세한 내용: [02-config.md](../architecture/02-config.md)

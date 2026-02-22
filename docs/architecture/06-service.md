@@ -17,8 +17,8 @@ claude-postman serve             # 서버 실행 (포그라운드)
 claude-postman doctor            # 환경 진단
 claude-postman doctor --fix      # 진단 + 자동 수정
 
-claude-postman install-service   # systemd/launchd 등록 (sudo)
-claude-postman uninstall-service # 서비스 해제 (sudo)
+claude-postman install-service   # systemd/launchd 등록
+claude-postman uninstall-service # 서비스 해제
 ```
 
 ### --help 출력
@@ -33,8 +33,8 @@ Commands:
   init              Setup configuration wizard
   serve             Start the relay server
   doctor            Check environment and diagnose issues
-  install-service   Register as a system service (requires sudo)
-  uninstall-service Remove system service (requires sudo)
+  install-service   Register as a system service (Linux: sudo required)
+  uninstall-service Remove system service (Linux: sudo required)
 
 Flags:
   --help            Show help
@@ -160,10 +160,10 @@ Fixed 2 issues. 1 error, 1 warning remaining.
 
 | 항목 | 결정 |
 |------|------|
-| Linux | systemd |
-| macOS | launchd |
-| 등록 | `claude-postman install-service` (sudo 필요) |
-| 해제 | `claude-postman uninstall-service` (sudo 필요) |
+| Linux | systemd (sudo 필요) |
+| macOS | launchd (LaunchAgents, sudo 불필요) |
+| 등록 | `claude-postman install-service` |
+| 해제 | `claude-postman uninstall-service` |
 | init 연계 | init 마지막에 등록 명령어 안내만 표시 |
 
 ### 3.2 플랫폼 감지
@@ -263,7 +263,60 @@ WantedBy=multi-user.target
 
 ---
 
-## 4. Go 인터페이스
+---
+
+## 4. Serve 메인 루프
+
+### 4.1 goroutine 구조
+
+```
+serve 시작
+  ↓
+errgroup.Group (context.Context로 종료 제어)
+  ├─ goroutine 1: IMAP 폴링
+  │   └─ 매 poll_interval_sec마다 Poll() 실행
+  │      → 새 메시지 → 세션 라우팅
+  │
+  ├─ goroutine 2: Outbox 플러시
+  │   └─ 매 poll_interval_sec마다 FlushOutbox() 실행
+  │      → pending 이메일 SMTP 발송 시도
+  │
+  └─ goroutine 3: FIFO 신호 수신
+      └─ 활성 세션별 FIFO 블로킹 읽기
+         → DONE:{UUID} 수신 → capture-pane → outbox에 결과 이메일 추가
+         → inbox 대기열 확인 → 다음 메시지 전달
+```
+
+### 4.2 종료 흐름
+
+```
+SIGINT / SIGTERM 수신
+  ↓
+context.Cancel()
+  ↓
+각 goroutine 종료 대기 (errgroup.Wait)
+  ↓
+DB 커넥션 닫기
+  ↓
+FIFO 파일 정리
+  ↓
+프로세스 종료
+```
+
+### 4.3 서버 시작 시 초기화
+
+```
+1. config.toml 로딩
+2. DB 열기 + 마이그레이션
+3. /tmp/claude-postman/ 디렉터리 생성
+4. 세션 복구 (RecoverAll)
+5. goroutine 시작
+6. 시작 로그 출력
+```
+
+---
+
+## 5. Go 인터페이스
 
 ```go
 // service
@@ -272,4 +325,7 @@ func UninstallService() error
 
 // doctor
 func RunDoctor(fix bool) (exitCode int, err error)
+
+// serve
+func RunServe(ctx context.Context, cfg *config.Config) error
 ```

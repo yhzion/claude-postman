@@ -65,11 +65,13 @@
 ```
 1. UUID 생성
 2. DB에 session 레코드 삽입 (status: creating)
-3. tmux new-session -d -s session-{UUID} -c {working_dir}
-4. tmux send-keys -t session-{UUID} \
+3. mkfifo /tmp/claude-postman/{UUID}.fifo
+4. tmux new-session -d -s session-{UUID} -c {working_dir}
+5. tmux send-keys -t session-{UUID} \
      "claude --dangerously-skip-permissions \
       --system-prompt '...' --model {model}" Enter
-5. DB: status → active
+6. goroutine에서 FIFO 블로킹 읽기 시작
+7. DB: status → active
 ```
 
 ### Claude Code 실행 옵션
@@ -94,10 +96,11 @@ claude --dangerously-skip-permissions \
    └─ ended면 에러 응답
 3. tmux send-keys -t session-{UUID} "{message}" Enter
 4. DB: status → active, last_prompt 업데이트
-5. 완료 신호 대기 (DONE:{UUID})
-6. 딜레이 후 tmux capture-pane -t session-{UUID} -p -S -1000
+5. FIFO에서 완료 신호 대기 (DONE:{UUID})
+6. 500ms 딜레이 후 tmux capture-pane -t session-{UUID} -p -S -1000
 7. DB: last_result 업데이트, status → idle
 8. outbox에 이메일 추가
+9. inbox 대기열 확인 → 있으면 다음 메시지 전달
 ```
 
 ---
@@ -108,8 +111,9 @@ claude --dangerously-skip-permissions \
 1. 사용자가 "종료" / "끝" 이메일 전송
 2. tmux send-keys -t session-{UUID} "/exit" Enter
 3. tmux kill-session -t session-{UUID}
-4. DB: status → ended
-5. 종료 확인 이메일 발송
+4. rm /tmp/claude-postman/{UUID}.fifo
+5. DB: status → ended
+6. 종료 확인 이메일 발송
 ```
 
 ---

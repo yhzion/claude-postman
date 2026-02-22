@@ -36,6 +36,7 @@ claude-postman serve    # 서버 실행
 [general]
 data_dir = "/home/user/.claude-postman/data"
 default_model = "sonnet"    # sonnet | opus | haiku
+poll_interval_sec = 30      # IMAP 폴링 주기 (초)
 
 [email]
 provider = "gmail"              # gmail | outlook | other
@@ -65,6 +66,7 @@ config.toml 값을 환경변수로 덮어쓸 수 있다.
 | `CLAUDE_POSTMAN_SMTP_PORT` | `email.smtp_port` |
 | `CLAUDE_POSTMAN_IMAP_HOST` | `email.imap_host` |
 | `CLAUDE_POSTMAN_IMAP_PORT` | `email.imap_port` |
+| `CLAUDE_POSTMAN_POLL_INTERVAL` | `general.poll_interval_sec` |
 
 ---
 
@@ -158,6 +160,10 @@ Claude Postman Setup
 
 ✅ Config saved: ~/.claude-postman/config.toml
 ✅ Data directory created: ~/.claude-postman/data
+✅ Template email sent to user@gmail.com
+
+To start a new session:
+  Forward the template email and edit the body.
 
 Run 'claude-postman serve' to start.
 ```
@@ -230,8 +236,9 @@ type Config struct {
 }
 
 type GeneralConfig struct {
-    DataDir      string
-    DefaultModel string
+    DataDir         string
+    DefaultModel    string
+    PollIntervalSec int
 }
 
 type EmailConfig struct {

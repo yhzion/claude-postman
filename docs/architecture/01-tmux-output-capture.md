@@ -36,11 +36,11 @@ pipe-pane과 capture-pane 폴링은 완료 감지가 불안정.
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ tmux: postman-control (호스트)                    │
+│ claude-postman (Go 프로세스)                      │
 │                                                  │
-│  claude-postman (Go 프로세스)                     │
-│    - tmux 이벤트 대기                             │
-│    - 신호 수신 → capture-pane → 이메일 발송        │
+│  - 세션별 FIFO 파일 감시                          │
+│  - 신호 수신 → capture-pane → 이메일 발송         │
+│  - 3개 goroutine: IMAP폴링, Outbox플러시, FIFO   │
 └──────────┬───────────────────────────────────────┘
            │ 생성/관리
            ▼
@@ -49,21 +49,44 @@ pipe-pane과 capture-pane 폴링은 완료 감지가 불안정.
 │                                                  │
 │  claude --dangerously-skip-permissions            │
 │    - 사용자 요청 작업 수행                         │
-│    - 완료 시: Bash("tmux send-keys -t             │
-│      postman-control 'DONE:{UUID}' Enter")        │
+│    - 완료 시: Bash("echo 'DONE:{UUID}'            │
+│      > /tmp/claude-postman/{UUID}.fifo")          │
 └──────────────────────────────────────────────────┘
 ```
 
-- **postman-control**: claude-postman이 실행되는 호스트 세션. 워커로부터 완료 신호를 수신.
-- **session-{UUID}**: Claude Code가 실행되는 워커 세션. 작업 완료 시 호스트에 신호 전송.
+- **claude-postman**: 메인 프로세스. 세션별 FIFO 파일에서 완료 신호를 블로킹 읽기.
+- **session-{UUID}**: Claude Code가 실행되는 워커 세션. 작업 완료 시 FIFO에 신호 기록.
 
 ### 2.2 입출력 방식
 
 | 항목 | 방식 | 설명 |
 |------|------|------|
 | 입력 | `tmux send-keys` | 워커 세션에 텍스트 전송 |
-| 완료 감지 | `tmux send-keys` 신호 | 워커 → 호스트로 `DONE:{UUID}` 전송 |
-| 출력 캡처 | `tmux capture-pane` | 신호 수신 후 1회 캡처 |
+| 완료 감지 | Unix FIFO (named pipe) | 워커가 `echo 'DONE:{UUID}' > {FIFO}` |
+| 출력 캡처 | `tmux capture-pane` | 신호 수신 후 500ms 딜레이, 1회 캡처 |
+| 출력 처리 | 전체 전달 | capture-pane 결과를 파싱 없이 그대로 사용 |
+
+### 2.3 신호 수신 메커니즘 (FIFO)
+
+```
+세션 생성 시:
+  1. mkfifo /tmp/claude-postman/{UUID}.fifo
+  2. goroutine에서 블로킹 read 시작
+
+Claude Code 작업 완료 시:
+  1. echo 'DONE:{UUID}' > /tmp/claude-postman/{UUID}.fifo
+
+claude-postman 수신:
+  1. FIFO에서 DONE:{UUID} 읽기 (즉시 감지)
+  2. 500ms 딜레이 (렌더링 대기)
+  3. capture-pane 실행
+  4. FIFO 파일은 세션 종료 시 삭제
+```
+
+FIFO의 장점:
+- **즉시 감지**: 블로킹 읽기로 폴링 없이 즉시 신호 감지
+- **간단**: 추가 tmux 세션 불필요
+- **신뢰성**: OS 레벨 파이프, 데이터 손실 없음
 
 ### 2.3 실행 옵션
 
@@ -87,15 +110,15 @@ claude --dangerously-skip-permissions \
      ↓
 3. Claude Code 작업 수행 (auto compact으로 롱텀 가능)
      ↓
-4. Claude Code 완료 → Bash로 "DONE:{UUID}" 신호 전송
+4. Claude Code 완료 → echo 'DONE:{UUID}' > /tmp/claude-postman/{UUID}.fifo
      ↓
-5. claude-postman이 신호 수신
+5. claude-postman이 FIFO에서 신호 수신 (즉시 감지)
      ↓
-6. 짧은 딜레이 (렌더링 대기)
+6. 500ms 딜레이 (렌더링 대기)
      ↓
-7. tmux capture-pane -t session-{UUID} -p
+7. tmux capture-pane -t session-{UUID} -p -S -1000
      ↓
-8. 최종 응답 파싱 → 이메일 발송
+8. 전체 출력을 이메일 본문으로 발송
 ```
 
 ---
@@ -106,7 +129,7 @@ Claude Code에 주입하는 시스템 프롬프트 핵심 내용:
 
 ```
 작업이 완료되면 반드시 다음 명령을 실행하세요:
-tmux send-keys -t postman-control 'DONE:{SESSION_ID}' Enter
+echo 'DONE:{SESSION_ID}' > /tmp/claude-postman/{SESSION_ID}.fifo
 
 최종 응답에는 반드시 다음을 포함하세요:
 - 작업 과정 요약
@@ -125,7 +148,7 @@ tmux send-keys -t postman-control 'DONE:{SESSION_ID}' Enter
 
 Claude Code가 신호를 보내지 못할 경우:
 
-1. 설정된 타임아웃(예: 30분) 경과
+1. 설정된 타임아웃 (기본: 30분, config에서 변경 가능) 경과
 2. `capture-pane`으로 현재 상태 확인
 3. 프롬프트 대기 상태면 완료로 간주
 4. 사용자에게 결과 발송
@@ -134,9 +157,19 @@ Claude Code가 신호를 보내지 못할 경우:
 
 | 위험 | 대응 |
 |------|------|
-| Claude Code가 신호 미전송 | 타임아웃 폴백 |
+| Claude Code가 신호 미전송 | 타임아웃 폴백 (30분) |
+| FIFO 파일 손실 | 세션 시작 시 재생성 |
 | 신호 형식 오류 | 정규식 파싱 + 무시 |
 | 중복 신호 | UUID로 중복 제거 |
+
+### 5.3 FIFO 라이프사이클
+
+```
+세션 생성:  mkfifo /tmp/claude-postman/{UUID}.fifo
+세션 종료:  rm /tmp/claude-postman/{UUID}.fifo
+서버 시작:  /tmp/claude-postman/ 디렉터리 생성 (없으면)
+서버 종료:  FIFO 파일들 정리
+```
 
 ---
 

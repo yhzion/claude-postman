@@ -25,6 +25,8 @@ internal/storage/
 ├── storage.go          # DB 초기화, 커넥션 관리, 마이그레이션
 ├── session.go          # sessions CRUD
 ├── outbox.go           # outbox CRUD
+├── inbox.go            # inbox (대기열) CRUD
+├── template.go         # template CRUD
 └── migrations/
     ├── embed.go        # go:embed
     └── 001_init.sql    # 초기 스키마
@@ -52,6 +54,7 @@ CREATE TABLE sessions (
 CREATE TABLE outbox (
     id              TEXT PRIMARY KEY,
     session_id      TEXT NOT NULL,
+    message_id      TEXT,
     subject         TEXT NOT NULL,
     body            TEXT NOT NULL,
     attachments     TEXT,
@@ -59,6 +62,21 @@ CREATE TABLE outbox (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     sent_at         DATETIME,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE inbox (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed       INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE template (
+    id              TEXT PRIMARY KEY,
+    message_id      TEXT NOT NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE schema_version (
@@ -88,12 +106,31 @@ INSERT INTO schema_version (version) VALUES (1);
 |------|------|------|
 | id | TEXT (UUID) | 메시지 식별자 |
 | session_id | TEXT | 소속 세션 FK |
+| message_id | TEXT | 이메일 Message-ID (스레드 매칭용) |
 | subject | TEXT | 이메일 제목 |
 | body | TEXT | 이메일 본문 (HTML) |
 | attachments | TEXT | 첨부파일 정보 (JSON) |
 | status | TEXT | `pending`, `sent`, `failed` |
 | created_at | DATETIME | 생성 시각 |
 | sent_at | DATETIME | 발송 시각 |
+
+### 3.4 inbox 필드 설명
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | TEXT (UUID) | 메시지 식별자 |
+| session_id | TEXT | 대상 세션 FK |
+| body | TEXT | 이메일 본문 |
+| created_at | DATETIME | 수신 시각 |
+| processed | INTEGER | 처리 완료 여부 (0/1) |
+
+### 3.5 template 필드 설명
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | TEXT (UUID) | 템플릿 식별자 |
+| message_id | TEXT | 발송된 템플릿 이메일의 Message-ID |
+| created_at | DATETIME | 생성 시각 |
 
 ---
 
@@ -182,4 +219,13 @@ func (s *Store) UpdateSession(session *Session) error
 func (s *Store) CreateOutbox(msg *OutboxMessage) error
 func (s *Store) GetPendingOutbox() ([]*OutboxMessage, error)
 func (s *Store) MarkSent(id string) error
+
+// Inbox (대기열)
+func (s *Store) EnqueueMessage(msg *InboxMessage) error
+func (s *Store) DequeueMessage(sessionID string) (*InboxMessage, error)
+func (s *Store) MarkProcessed(id string) error
+
+// Template
+func (s *Store) SaveTemplate(tmpl *Template) error
+func (s *Store) IsValidTemplateRef(messageID string) (bool, error)
 ```
