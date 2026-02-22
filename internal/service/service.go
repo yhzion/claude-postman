@@ -94,7 +94,7 @@ func UninstallService() error {
 
 func installSystemd(bin string) error {
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("root privileges required.\n  Run: sudo claude-postman install-service")
+		return fmt.Errorf("root privileges required.\n  Run: sudo %s install-service", bin)
 	}
 
 	u, err := user.Current()
@@ -128,7 +128,8 @@ func installSystemd(bin string) error {
 
 func uninstallSystemd() error {
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("root privileges required.\n  Run: sudo claude-postman uninstall-service")
+		bin, _ := os.Executable()
+		return fmt.Errorf("root privileges required.\n  Run: sudo %s uninstall-service", bin)
 	}
 
 	cmds := [][]string{
