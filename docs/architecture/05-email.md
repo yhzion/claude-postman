@@ -10,7 +10,7 @@
 | 항목 | 결정 |
 |------|------|
 | 수신 | IMAP 폴링 (기본 30초, config에서 변경 가능) |
-| 발송 | SMTP (TLS) |
+| 발송 | SMTP (TLS, `net/smtp` 표준) |
 | 식별 | 제목 태그 `[claude-postman]` |
 | 세션 매칭 | Session-ID (본문) + In-Reply-To/References (스레드) |
 | 발신자 검증 | config의 `email.user`와 From 일치 시만 처리 |
@@ -93,12 +93,23 @@ In-Reply-To/References 확인
 ```
 Subject: [claude-postman] New Session
 
-───── SESSION CONFIG ─────
 Directory: /home/user
 Model: sonnet
-──────────────────────────
 
 (Write your task here)
+```
+
+**파싱 규칙 (키워드 기반):**
+```
+정규식으로 추출:
+  ^Directory:\s*(.+)$  → working_dir (미매칭 시 config.data_dir의 부모 또는 ~)
+  ^Model:\s*(.+)$      → model (미매칭 시 config.default_model)
+  나머지 텍스트         → 태스크 프롬프트
+
+포워딩 아티팩트 처리:
+  - "---------- Forwarded message ----------" 이후 텍스트는 무시
+  - "> " 인용 접두사 제거 후 파싱
+  - HTML 본문인 경우 텍스트 추출 후 파싱
 ```
 
 사용자는 Directory, Model을 수정하고 태스크 내용을 입력한 후 자기 자신에게 포워드.
@@ -209,6 +220,11 @@ DB template.message_id와 매칭
 
 | 라이브러리 | 용도 |
 |-----------|------|
+| 라이브러리 | 용도 |
+|-----------|------|
+| `net/smtp` (표준) | SMTP 발송 |
+| `emersion/go-imap` v2 | IMAP 수신 |
+| `emersion/go-message` | 이메일 메시지 파싱 (MIME, 헤더, 본문) |
 | `yuin/goldmark` | Markdown → HTML 변환 |
 | `alecthomas/chroma` | 코드 하이라이팅 |
 
@@ -237,7 +253,7 @@ func (m *Mailer) Send(sessionID, subject, htmlBody string) error
 func (m *Mailer) FlushOutbox() error
 
 // 템플릿
-func (m *Mailer) SendTemplate() error
+func (m *Mailer) SendTemplate() (messageID string, err error)
 
 // 메시지 타입
 type IncomingMessage struct {

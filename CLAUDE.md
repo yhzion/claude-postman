@@ -29,6 +29,7 @@ Claude Code와 사용자 사이를 **이메일로 중계**하는 서버 프로�
 | `spf13/cobra` | CLI 프레임워크 |
 | `mattn/go-sqlite3` | SQLite 드라이버 (CGO) |
 | `emersion/go-imap` v2 | IMAP 클라이언트 |
+| `emersion/go-message` | 이메일 메시지 파싱 (MIME, 헤더) |
 | `BurntSushi/toml` | TOML 파서 |
 | `google/uuid` | UUID 생성 |
 | `yuin/goldmark` | Markdown → HTML 변환 |

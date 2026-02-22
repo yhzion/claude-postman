@@ -79,6 +79,10 @@ CREATE TABLE template (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_sessions_status ON sessions(status);
+CREATE INDEX idx_outbox_status ON outbox(status);
+CREATE INDEX idx_inbox_session_processed ON inbox(session_id, processed);
+
 CREATE TABLE schema_version (
     version         INTEGER NOT NULL
 );
@@ -198,7 +202,51 @@ func (s *Store) Close() error {
 
 ---
 
-## 6. Go 인터페이스
+## 6. Go 구조체
+
+```go
+type Session struct {
+    ID         string
+    TmuxName   string
+    WorkingDir string
+    Model      string
+    Status     string    // "creating" | "active" | "idle" | "ended"
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+    LastPrompt *string   // nullable
+    LastResult *string   // nullable
+}
+
+type OutboxMessage struct {
+    ID          string
+    SessionID   string
+    MessageID   *string   // nullable, 발송 후 설정
+    Subject     string
+    Body        string
+    Attachments *string   // nullable, JSON
+    Status      string    // "pending" | "sent" | "failed"
+    CreatedAt   time.Time
+    SentAt      *time.Time // nullable
+}
+
+type InboxMessage struct {
+    ID        string
+    SessionID string
+    Body      string
+    CreatedAt time.Time
+    Processed bool
+}
+
+type Template struct {
+    ID        string
+    MessageID string    // 발송된 템플릿 이메일의 Message-ID
+    CreatedAt time.Time
+}
+```
+
+---
+
+## 7. Go 인터페이스
 
 ```go
 type Store struct {
@@ -214,6 +262,7 @@ func (s *Store) Migrate() error
 func (s *Store) CreateSession(session *Session) error
 func (s *Store) GetSession(id string) (*Session, error)
 func (s *Store) UpdateSession(session *Session) error
+func (s *Store) ListSessionsByStatus(statuses ...string) ([]*Session, error)
 
 // Outbox
 func (s *Store) CreateOutbox(msg *OutboxMessage) error

@@ -83,12 +83,28 @@ claude-postman 수신:
   4. FIFO 파일은 세션 종료 시 삭제
 ```
 
+**FIFO goroutine 관리:**
+- 세션 생성 시 전용 goroutine 스폰 (세션 1개 = goroutine 1개)
+- 세션 종료 시 goroutine도 종료
+- goroutine 내부: `for` 루프에서 FIFO 읽기 → DONE 수신 → 처리 → 다시 대기
+
+**Graceful shutdown:**
+```
+서버 종료 신호 (SIGINT/SIGTERM)
+  ↓
+context.Cancel()
+  ↓
+각 세션의 FIFO에 sentinel 값 "SHUTDOWN" 쓰기
+  ↓
+블로킹 읽기 해제 → goroutine이 context 확인 → 종료
+```
+
 FIFO의 장점:
 - **즉시 감지**: 블로킹 읽기로 폴링 없이 즉시 신호 감지
 - **간단**: 추가 tmux 세션 불필요
 - **신뢰성**: OS 레벨 파이프, 데이터 손실 없음
 
-### 2.3 실행 옵션
+### 2.4 실행 옵션
 
 ```bash
 claude --dangerously-skip-permissions \

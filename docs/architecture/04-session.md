@@ -70,9 +70,12 @@
 5. tmux send-keys -t session-{UUID} \
      "claude --dangerously-skip-permissions \
       --system-prompt '...' --model {model}" Enter
-6. goroutine에서 FIFO 블로킹 읽기 시작
-7. DB: status → active
+6. DB: status → active (send-keys 성공 즉시 전이)
+7. 세션 전용 goroutine 스폰 → FIFO 블로킹 읽기 시작
 ```
+
+> **creating → active 전이 시점**: `tmux send-keys` 성공 시점.
+> Claude Code 로딩 완료를 기다리지 않음 (로딩 시간이 가변적이므로).
 
 ### Claude Code 실행 옵션
 
@@ -131,12 +134,14 @@ DB에서 status가 active/idle인 세션 조회
   ├─ tmux has-session -t session-{UUID}
   │  └─ 있음 → 그대로 유지 (정상)
   └─ 없음 → 복구 시도:
-       1. tmux new-session -d -s session-{UUID} -c {working_dir}
-       2. tmux send-keys -t session-{UUID} \
+       1. mkfifo /tmp/claude-postman/{UUID}.fifo (FIFO 재생성)
+       2. tmux new-session -d -s session-{UUID} -c {working_dir}
+       3. tmux send-keys -t session-{UUID} \
             "claude --dangerously-skip-permissions \
              --resume --model {model}" Enter
-       3. DB: status 유지
-       4. 사용자에게 "Session recovered" 이메일 발송
+       4. 세션 전용 goroutine 스폰 → FIFO 블로킹 읽기 시작
+       5. DB: status 유지
+       6. 사용자에게 "Session recovered" 이메일 발송
 ```
 
 ### 6.2 복구 실패 시

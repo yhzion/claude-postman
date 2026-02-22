@@ -263,8 +263,6 @@ WantedBy=multi-user.target
 
 ---
 
----
-
 ## 4. Serve 메인 루프
 
 ### 4.1 goroutine 구조
@@ -287,23 +285,35 @@ errgroup.Group (context.Context로 종료 제어)
          → inbox 대기열 확인 → 다음 메시지 전달
 ```
 
-### 4.2 종료 흐름
+### 4.2 에러 처리
+
+```
+각 goroutine의 에러 처리:
+  ├─ IMAP 폴링 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
+  ├─ Outbox 발송 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
+  ├─ FIFO 읽기 에러 → 에러 로그 + FIFO 재생성 시도
+  └─ 치명적 에러 (DB 손상 등) → errgroup 취소 → 전체 종료
+```
+
+### 4.3 종료 흐름
 
 ```
 SIGINT / SIGTERM 수신
   ↓
 context.Cancel()
   ↓
+활성 세션의 FIFO에 "SHUTDOWN" sentinel 쓰기 → 블로킹 읽기 해제
+  ↓
 각 goroutine 종료 대기 (errgroup.Wait)
   ↓
 DB 커넥션 닫기
   ↓
-FIFO 파일 정리
+FIFO 파일 정리 (rm /tmp/claude-postman/*.fifo)
   ↓
 프로세스 종료
 ```
 
-### 4.3 서버 시작 시 초기화
+### 4.4 서버 시작 시 초기화
 
 ```
 1. config.toml 로딩
@@ -316,7 +326,29 @@ FIFO 파일 정리
 
 ---
 
-## 5. Go 인터페이스
+## 5. cmd/main.go 구조
+
+```go
+// cobra 커맨드 트리
+rootCmd
+├── initCmd      → config.RunInit()
+├── serveCmd     → serve.RunServe(ctx, cfg)
+├── doctorCmd    → doctor.RunDoctor(fix)
+├── installCmd   → service.InstallService()
+└── uninstallCmd → service.UninstallService()
+
+// 의존성 주입 순서 (serveCmd 내부)
+1. cfg := config.Load()
+2. store := storage.New(cfg.General.DataDir)
+3. defer store.Close()
+4. mgr := session.New(store)
+5. mailer := email.New(&cfg.Email, store)
+6. serve.RunServe(ctx, cfg, store, mgr, mailer)
+```
+
+---
+
+## 6. Go 인터페이스
 
 ```go
 // service
@@ -327,5 +359,6 @@ func UninstallService() error
 func RunDoctor(fix bool) (exitCode int, err error)
 
 // serve
-func RunServe(ctx context.Context, cfg *config.Config) error
+func RunServe(ctx context.Context, cfg *config.Config,
+    store *storage.Store, mgr *session.Manager, mailer *email.Mailer) error
 ```

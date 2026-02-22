@@ -160,7 +160,11 @@ Claude Postman Setup
 
 ✅ Config saved: ~/.claude-postman/config.toml
 ✅ Data directory created: ~/.claude-postman/data
-✅ Template email sent to user@gmail.com
+
+Testing email connection...
+  ✅ SMTP: smtp.gmail.com:587 (connected)
+  ✅ IMAP: imap.gmail.com:993 (connected)
+  ✅ Template email sent to user@gmail.com
 
 To start a new session:
   Forward the template email and edit the body.
@@ -231,23 +235,23 @@ Existing config found. Values shown as defaults.
 
 ```go
 type Config struct {
-    General GeneralConfig
-    Email   EmailConfig
+    General GeneralConfig `toml:"general"`
+    Email   EmailConfig   `toml:"email"`
 }
 
 type GeneralConfig struct {
-    DataDir         string
-    DefaultModel    string
-    PollIntervalSec int
+    DataDir         string `toml:"data_dir"`
+    DefaultModel    string `toml:"default_model"`
+    PollIntervalSec int    `toml:"poll_interval_sec"`
 }
 
 type EmailConfig struct {
-    Provider    string
-    SMTPHost    string
-    SMTPPort    int
-    IMAPHost    string
-    IMAPPort    int
-    User        string
-    AppPassword string
+    Provider    string `toml:"provider"`
+    SMTPHost    string `toml:"smtp_host"`
+    SMTPPort    int    `toml:"smtp_port"`
+    IMAPHost    string `toml:"imap_host"`
+    IMAPPort    int    `toml:"imap_port"`
+    User        string `toml:"user"`
+    AppPassword string `toml:"app_password"`
 }
 ```
