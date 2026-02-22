@@ -271,26 +271,34 @@ WantedBy=multi-user.target
 serve 시작
   ↓
 errgroup.Group (context.Context로 종료 제어)
-  ├─ goroutine 1: IMAP 폴링
-  │   └─ 매 poll_interval_sec마다 Poll() 실행
-  │      → 새 메시지 → 세션 라우팅
+  ├─ goroutine 1: IMAP 폴링 + 오케스트레이션
+  │   └─ 매 poll_interval_sec마다:
+  │      1. mailer.Poll() → []*IncomingMessage (IMAP I/O만)
+  │      2. 각 메시지 분류:
+  │         ├─ IsNewSession → mgr.Create() (세션 생성)
+  │         └─ 기존 세션 → store.EnqueueMessage() (inbox 삽입)
+  │      3. idle 세션의 미처리 inbox 확인 → mgr.DeliverNext() (세션 전달)
   │
   ├─ goroutine 2: Outbox 플러시
   │   └─ 매 poll_interval_sec마다 FlushOutbox() 실행
   │      → pending 이메일 SMTP 발송 시도
   │
-  └─ goroutine 3: FIFO 신호 수신
-      └─ 활성 세션별 FIFO 블로킹 읽기
-         → DONE:{UUID} 수신 → capture-pane → outbox에 결과 이메일 추가
+  └─ goroutine 3~N+2: 세션별 FIFO (세션 1개 = goroutine 1개)
+      └─ 세션 생성/복구 시 스폰, 세션 종료 시 종료
+         → FIFO 블로킹 읽기 → DONE:{UUID} 수신
+         → capture-pane → outbox에 결과 이메일 추가
          → inbox 대기열 확인 → 다음 메시지 전달
 ```
+
+> **goroutine 수**: 고정 2개 (IMAP, Outbox) + 활성 세션 수만큼 동적 생성.
+> FIFO goroutine은 errgroup에 포함하지 않고 Manager가 개별 관리.
 
 ### 4.2 에러 처리
 
 ```
 각 goroutine의 에러 처리:
   ├─ IMAP 폴링 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
-  ├─ Outbox 발송 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
+  ├─ Outbox 발송 실패 → 지수 백오프 재시도 (최대 5회, 이후 failed)
   ├─ FIFO 읽기 에러 → 에러 로그 + FIFO 재생성 시도
   └─ 치명적 에러 (DB 손상 등) → errgroup 취소 → 전체 종료
 ```
@@ -302,9 +310,12 @@ SIGINT / SIGTERM 수신
   ↓
 context.Cancel()
   ↓
-활성 세션의 FIFO에 "SHUTDOWN" sentinel 쓰기 → 블로킹 읽기 해제
+활성 세션의 FIFO에 "SHUTDOWN" sentinel 쓰기 (non-blocking)
+  ├─ O_WRONLY|O_NONBLOCK으로 열기
+  ├─ 성공 → "SHUTDOWN" 쓰기 → 블로킹 읽기 해제
+  └─ ENXIO (읽기 측 없음) → goroutine 이미 종료 → 스킵
   ↓
-각 goroutine 종료 대기 (errgroup.Wait)
+각 goroutine 종료 대기 (errgroup.Wait, 타임아웃 5초)
   ↓
 DB 커넥션 닫기
   ↓

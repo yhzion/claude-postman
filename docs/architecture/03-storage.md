@@ -59,6 +59,8 @@ CREATE TABLE outbox (
     body            TEXT NOT NULL,
     attachments     TEXT,
     status          TEXT NOT NULL DEFAULT 'pending',
+    retry_count     INTEGER NOT NULL DEFAULT 0,
+    next_retry_at   DATETIME,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     sent_at         DATETIME,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
@@ -113,8 +115,10 @@ INSERT INTO schema_version (version) VALUES (1);
 | message_id | TEXT | 이메일 Message-ID (스레드 매칭용) |
 | subject | TEXT | 이메일 제목 |
 | body | TEXT | 이메일 본문 (HTML) |
-| attachments | TEXT | 첨부파일 정보 (JSON) |
+| attachments | TEXT | 첨부파일 정보 (JSON, v1 미사용 - 향후 확장용) |
 | status | TEXT | `pending`, `sent`, `failed` |
+| retry_count | INTEGER | 재시도 횟수 (0부터 시작) |
+| next_retry_at | DATETIME | 다음 재시도 가능 시각 (지수 백오프) |
 | created_at | DATETIME | 생성 시각 |
 | sent_at | DATETIME | 발송 시각 |
 
@@ -220,11 +224,13 @@ type Session struct {
 type OutboxMessage struct {
     ID          string
     SessionID   string
-    MessageID   *string   // nullable, 발송 후 설정
+    MessageID   *string    // nullable, 발송 후 설정
     Subject     string
     Body        string
-    Attachments *string   // nullable, JSON
-    Status      string    // "pending" | "sent" | "failed"
+    Attachments *string    // nullable, JSON (v1 미사용)
+    Status      string     // "pending" | "sent" | "failed"
+    RetryCount  int        // 재시도 횟수
+    NextRetryAt *time.Time // nullable, 다음 재시도 가능 시각
     CreatedAt   time.Time
     SentAt      *time.Time // nullable
 }
@@ -250,13 +256,21 @@ type Template struct {
 
 ```go
 type Store struct {
-    db *sql.DB
+    db   *sql.DB   // 일반 모드
+    tx   *sql.Tx   // 트랜잭션 모드 (Tx() 내부에서만 설정)
 }
+
+// Tx()는 fn에 트랜잭션용 Store 복사본을 전달.
+// fn 내부에서 호출하는 모든 CRUD 메서드는 tx를 사용.
+// fn이 에러를 반환하면 롤백, nil이면 커밋.
 
 // 초기화
 func New(dataDir string) (*Store, error)
 func (s *Store) Close() error
 func (s *Store) Migrate() error
+
+// 트랜잭션 (복합 연산용)
+func (s *Store) Tx(ctx context.Context, fn func(tx *Store) error) error  // fn 내부의 모든 DB 작업을 단일 트랜잭션으로 실행
 
 // Sessions
 func (s *Store) CreateSession(session *Session) error
@@ -266,8 +280,12 @@ func (s *Store) ListSessionsByStatus(statuses ...string) ([]*Session, error)
 
 // Outbox
 func (s *Store) CreateOutbox(msg *OutboxMessage) error
-func (s *Store) GetPendingOutbox() ([]*OutboxMessage, error)
+func (s *Store) GetPendingOutbox() ([]*OutboxMessage, error)  // status=pending AND (next_retry_at IS NULL OR next_retry_at <= now)
 func (s *Store) MarkSent(id string) error
+func (s *Store) MarkFailed(id string, retryCount int, nextRetryAt *time.Time) error
+
+// 데이터 정리
+func (s *Store) PurgeOldData(retentionDays int) error  // ended 세션의 오래된 outbox(sent)/inbox(processed) 삭제
 
 // Inbox (대기열)
 func (s *Store) EnqueueMessage(msg *InboxMessage) error

@@ -2,6 +2,9 @@
 
 claude-postman 프로젝트의 Claude Code 작업 가이드.
 
+> **SSOT (Single Source of Truth)**: 상세 설계는 [아키텍처 문서](docs/architecture/)가 권위 있는 원본입니다.
+> 이 파일은 프로젝트 개요와 코딩 가이드를 제공하며, 설계 세부사항은 아키텍처 문서를 참조하세요.
+
 ## 프로젝트 개요
 
 Claude Code와 사용자 사이를 **이메일로 중계**하는 서버 프로그램.
@@ -69,7 +72,9 @@ claude-postman/
 │   └── claude-postman/    # main 진입점
 ├── internal/
 │   ├── config/            # 설정 로딩, init 마법사
+│   ├── doctor/            # 환경 진단 (doctor 커맨드)
 │   ├── email/             # 이메일 송수신 (SMTP/IMAP)
+│   ├── serve/             # 메인 루프 (serve 커맨드)
 │   ├── session/           # tmux 세션 관리
 │   ├── storage/           # SQLite 저장소
 │   └── service/           # 시스템 서비스 (systemd/launchd)
@@ -90,6 +95,8 @@ config.toml 값을 환경변수로 오버라이드 가능. 자세한 내용은 [
 ```bash
 CLAUDE_POSTMAN_DATA_DIR=/path/to/data
 CLAUDE_POSTMAN_MODEL=sonnet
+CLAUDE_POSTMAN_POLL_INTERVAL=30
+CLAUDE_POSTMAN_SESSION_TIMEOUT=30
 CLAUDE_POSTMAN_EMAIL_USER=user@gmail.com
 CLAUDE_POSTMAN_EMAIL_PASSWORD=app-password
 CLAUDE_POSTMAN_SMTP_HOST=smtp.gmail.com
@@ -100,11 +107,9 @@ CLAUDE_POSTMAN_IMAP_PORT=993
 
 ## 문서
 
-- [기획 문서](docs/ideas.md)
-- [유즈케이스](docs/usecases/SUMMARY.md)
-- [기술 스택 결정](docs/tech-stack/)
+### 아키텍처 설계 (SSOT)
 
-### 아키텍처 설계
+구현 시 이 문서들이 최종 권위입니다:
 
 - [01. tmux 출력 캡처](docs/architecture/01-tmux-output-capture.md)
 - [02. Config 설계](docs/architecture/02-config.md)
@@ -112,3 +117,17 @@ CLAUDE_POSTMAN_IMAP_PORT=993
 - [04. Session 관리](docs/architecture/04-session.md)
 - [05. Email (SMTP/IMAP)](docs/architecture/05-email.md)
 - [06. CLI, Service, Doctor](docs/architecture/06-service.md)
+
+### 구현 계획 & 진행
+
+- [WORKFLOW](docs/plans/WORKFLOW.md) — 팀 역할, TDD 핸드오프, Phase별 의존성
+- [PROGRESS](docs/plans/PROGRESS.md) — 현재 진행 상황, 다음 작업 (새 세션 시작점)
+- 모듈별 플랜: [Storage](docs/plans/01-storage.md) | [Config](docs/plans/02-config.md) | [Session](docs/plans/03-session.md) | [Email](docs/plans/04-email.md) | [Serve](docs/plans/05-serve.md) | [Doctor/Service](docs/plans/06-doctor-service.md)
+
+> 구현 시 [WORKFLOW.md](docs/plans/WORKFLOW.md)의 TDD 프로토콜을 따르세요.
+
+### 참고 문서
+
+- [기획 문서](docs/ideas.md) — 초기 브레인스토밍
+- [유즈케이스](docs/usecases/SUMMARY.md) — 유즈케이스 모음
+- [기술 스택 결정](docs/tech-stack/) — 기술 선택 배경
