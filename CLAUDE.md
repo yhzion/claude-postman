@@ -118,6 +118,14 @@ CLAUDE_POSTMAN_IMAP_PORT=993
 - [05. Email (SMTP/IMAP)](docs/architecture/05-email.md)
 - [06. CLI, Service, Doctor](docs/architecture/06-service.md)
 
+### 구현 계획 & 진행
+
+- [WORKFLOW](docs/plans/WORKFLOW.md) — 팀 역할, TDD 핸드오프, Phase별 의존성
+- [PROGRESS](docs/plans/PROGRESS.md) — 현재 진행 상황, 다음 작업 (새 세션 시작점)
+- 모듈별 플랜: [Storage](docs/plans/01-storage.md) | [Config](docs/plans/02-config.md) | [Session](docs/plans/03-session.md) | [Email](docs/plans/04-email.md) | [Serve](docs/plans/05-serve.md) | [Doctor/Service](docs/plans/06-doctor-service.md)
+
+> 구현 시 [WORKFLOW.md](docs/plans/WORKFLOW.md)의 TDD 프로토콜을 따르세요.
+
 ### 참고 문서
 
 - [기획 문서](docs/ideas.md) — 초기 브레인스토밍
