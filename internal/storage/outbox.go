@@ -62,6 +62,27 @@ func (s *Store) MarkFailed(id string, retryCount int, nextRetryAt *time.Time) er
 	return err
 }
 
+// UpdateRetry updates retry count and next retry time, keeping status as pending.
+func (s *Store) UpdateRetry(id string, retryCount int, nextRetryAt *time.Time) error {
+	_, err := s.q().ExecContext(context.Background(),
+		`UPDATE outbox SET retry_count = ?, next_retry_at = ? WHERE id = ?`,
+		retryCount, formatNullableTime(nextRetryAt), id,
+	)
+	return err
+}
+
+// GetSessionIDByOutboxMessageID looks up the session ID for an outbox message ID.
+func (s *Store) GetSessionIDByOutboxMessageID(messageID string) (string, error) {
+	var sessionID string
+	err := s.q().QueryRowContext(context.Background(),
+		`SELECT session_id FROM outbox WHERE message_id = ? LIMIT 1`, messageID,
+	).Scan(&sessionID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return sessionID, err
+}
+
 // PurgeOldData removes old sent/processed data for ended sessions.
 func (s *Store) PurgeOldData(retentionDays int) error {
 	_, err := s.q().ExecContext(context.Background(), fmt.Sprintf(
