@@ -162,7 +162,33 @@ func (m *Mailer) handleRetry(msg *storage.OutboxMessage) {
 
 // SendTemplate sends the session creation template email and returns its Message-ID.
 func (m *Mailer) SendTemplate() (string, error) {
-	templateBody := "Directory: ~\nModel: sonnet\n\n(Write your task here)"
+	templateBody := `How to create a new Claude Code session
+========================================
+
+IMPORTANT — Do NOT change:
+  - The subject line (must contain [claude-postman])
+  - You must FORWARD this email, not compose a new one
+  - Send to yourself (your own email address)
+  - Keep "Directory:" and "Model:" keywords exactly as written
+
+You CAN edit:
+  - The path after "Directory:" (e.g. ~/my-project)
+  - The model after "Model:" — sonnet | opus | haiku
+  - Replace "(Write your task here)" with your task
+
+────────────────────────────────────
+
+Directory: ~
+Model: sonnet
+
+(Write your task here)
+
+────────────────────────────────────
+
+Tips:
+  - You can forward this email multiple times
+    — each forward creates a new session
+  - A fresh template is sent every time the server starts`
 	htmlBody, err := RenderHTML(templateBody)
 	if err != nil {
 		return "", fmt.Errorf("render template: %w", err)

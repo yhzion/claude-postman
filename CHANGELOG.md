@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.6] - 2026-02-22
+
+### Improved
+- Template email now includes usage instructions
+  - What NOT to change (subject, forward-only, keywords)
+  - What CAN be edited (Directory, Model, task)
+  - Tips for multiple sessions
+
 ## [v0.4.5] - 2026-02-22
 
 ### Improved
@@ -129,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hooks: golangci-lint, go-build, go-test
 - 79+ unit tests across all modules
 
-[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.6...HEAD
+[v0.4.6]: https://github.com/yhzion/claude-postman/compare/v0.4.5...v0.4.6
 [v0.4.5]: https://github.com/yhzion/claude-postman/compare/v0.4.4...v0.4.5
 [v0.4.4]: https://github.com/yhzion/claude-postman/compare/v0.4.3...v0.4.4
 [v0.4.3]: https://github.com/yhzion/claude-postman/compare/v0.4.2...v0.4.3
