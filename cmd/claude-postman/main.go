@@ -15,6 +15,7 @@ import (
 	"github.com/yhzion/claude-postman/internal/service"
 	"github.com/yhzion/claude-postman/internal/session"
 	"github.com/yhzion/claude-postman/internal/storage"
+	"github.com/yhzion/claude-postman/internal/updater"
 )
 
 var version = "dev"
@@ -24,6 +25,10 @@ func newRootCmd() *cobra.Command {
 		Use:   "claude-postman",
 		Short: "claude-postman - Email relay for Claude Code",
 		Long:  "claude-postman - Email relay for Claude Code",
+		PersistentPostRun: func(_ *cobra.Command, _ []string) {
+			// Check for updates after any command (non-blocking)
+			go updater.New(version).CheckAndNotify()
+		},
 	}
 	root.Version = version
 	root.CompletionOptions.DisableDefaultCmd = true
@@ -34,6 +39,7 @@ func newRootCmd() *cobra.Command {
 		newDoctorCmd(),
 		newInstallServiceCmd(),
 		newUninstallServiceCmd(),
+		newUpdateCmd(),
 	)
 	return root
 }
@@ -88,6 +94,16 @@ func newUninstallServiceCmd() *cobra.Command {
 	}
 }
 
+func newUpdateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Update to the latest version",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return updater.New(version).RunUpdate()
+		},
+	}
+}
+
 func runServe(_ *cobra.Command, _ []string) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -113,17 +129,18 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 func runDoctor(fix bool) error {
 	configDir := config.ConfigDir()
-	dataDir := ""
+	deps := doctor.Deps{ConfigDir: configDir}
 
 	cfg, err := config.Load()
 	if err == nil {
-		dataDir = cfg.General.DataDir
+		deps.DataDir = cfg.General.DataDir
+		deps.SMTPAddr = fmt.Sprintf("%s:%d", cfg.Email.SMTPHost, cfg.Email.SMTPPort)
+		deps.IMAPAddr = fmt.Sprintf("%s:%d", cfg.Email.IMAPHost, cfg.Email.IMAPPort)
 	} else {
-		// Fallback: use default data dir
-		dataDir = configDir + "/data"
+		deps.DataDir = configDir + "/data"
 	}
 
-	exitCode := doctor.RunDoctor(os.Stdout, configDir, dataDir, fix)
+	exitCode := doctor.RunDoctor(os.Stdout, deps, fix)
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}

@@ -15,7 +15,7 @@ func TestRootCmd_HasExpectedSubcommands(t *testing.T) {
 		names[cmd.Name()] = true
 	}
 
-	expected := []string{"init", "serve", "doctor", "install-service", "uninstall-service"}
+	expected := []string{"init", "serve", "doctor", "install-service", "uninstall-service", "update"}
 	for _, name := range expected {
 		assert.True(t, names[name], "missing subcommand: %s", name)
 	}

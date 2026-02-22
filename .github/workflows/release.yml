@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install cross-compiler
+        if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          BINARY="claude-postman-${GOOS}-${GOARCH}"
+
+          if [ "${GOOS}" = "linux" ] && [ "${GOARCH}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          fi
+
+          if [ "${GOOS}" = "darwin" ]; then
+            export CGO_ENABLED=0
+          fi
+
+          go build -ldflags "-s -w -X main.version=${TAG_NAME}" \
+            -o "dist/${BINARY}" ./cmd/claude-postman
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-postman-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
