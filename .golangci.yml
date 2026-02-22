@@ -42,11 +42,11 @@ linters-settings:
 
 run:
   timeout: 5m
-  skip-dirs:
-    - vendor
-    - testdata
 
 issues:
+  exclude-dirs:
+    - vendor
+    - testdata
   exclude-rules:
     # 테스트 파일은 일부 린트 제외
     - path: _test\.go

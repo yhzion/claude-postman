@@ -28,7 +28,7 @@ repos:
 
       - id: go-imports
         name: go-imports
-        entry: /home/feel_so_good/go/bin/goimports -l -w
+        entry: goimports -l -w
         language: system
         types: [go]
         require_serial: true
@@ -47,7 +47,7 @@ repos:
     hooks:
       - id: golangci-lint
         name: golangci-lint
-        entry: /home/feel_so_good/go/bin/golangci-lint run
+        entry: golangci-lint run
         language: system
         types: [go]
         pass_filenames: false
