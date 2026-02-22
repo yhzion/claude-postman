@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-02-22
+
+### Fixed
+- `install-service` / `uninstall-service`: show actionable `sudo` hint instead of raw "permission denied" on Linux
+
 ## [v0.4.0] - 2026-02-22
 
 ### Changed
@@ -95,7 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hooks: golangci-lint, go-build, go-test
 - 79+ unit tests across all modules
 
-[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/yhzion/claude-postman/compare/v0.4.1...HEAD
+[v0.4.1]: https://github.com/yhzion/claude-postman/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/yhzion/claude-postman/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/yhzion/claude-postman/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/yhzion/claude-postman/compare/v0.2.0...v0.3.0
