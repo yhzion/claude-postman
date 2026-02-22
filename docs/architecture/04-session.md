@@ -93,18 +93,44 @@ claude --dangerously-skip-permissions \
 
 ## 4. 메시지 전송
 
+### 4.1 메시지 수신 → 대기열 삽입
+
+모든 수신 메시지는 **세션 상태와 무관하게** 항상 inbox 테이블에 삽입한다.
+이는 IMAP goroutine과 FIFO goroutine 사이의 경합 조건(lost wakeup)을 방지한다.
+
 ```
 1. 이메일 수신 → Session-ID로 세션 식별
 2. DB에서 세션 조회 (status 확인)
    └─ ended면 에러 응답
-3. tmux send-keys -t session-{UUID} "{message}" Enter
-4. DB: status → active, last_prompt 업데이트
-5. FIFO에서 완료 신호 대기 (DONE:{UUID})
-6. 500ms 딜레이 후 tmux capture-pane -t session-{UUID} -p -S -1000
-7. DB: last_result 업데이트, status → idle
-8. outbox에 이메일 추가
-9. inbox 대기열 확인 → 있으면 다음 메시지 전달
+3. inbox 테이블에 삽입 (세션 상태 무관)
 ```
+
+### 4.2 대기열 소비 → 세션 전달
+
+FIFO goroutine이 idle 전환과 inbox 확인을 **단일 트랜잭션**으로 처리한다.
+
+```
+FIFO에서 DONE:{UUID} 수신
+  ↓
+500ms 딜레이 후 tmux capture-pane -t session-{UUID} -p -S -1000
+  ↓
+DB 트랜잭션 시작:
+  1. last_result 업데이트
+  2. outbox에 이메일 추가
+  3. inbox에서 다음 미처리 메시지 조회 (FIFO 순서)
+     ├─ 있음 → processed=1, last_prompt 업데이트, status 유지 (active)
+     └─ 없음 → status → idle
+DB 트랜잭션 커밋
+  ↓
+다음 메시지가 있으면:
+  tmux send-keys -t session-{UUID} "{message}" Enter
+  (status는 트랜잭션 내에서 이미 active 유지)
+```
+
+> **핵심**: idle 전환과 inbox 확인이 하나의 트랜잭션이므로
+> "idle로 전환 직후 메시지 도착" 시나리오에서도 메시지가 유실되지 않음.
+> idle 상태에서 새 메시지가 inbox에 삽입되면, 다음 IMAP 폴링 주기에
+> idle 세션의 미처리 inbox를 확인하여 전달.
 
 ---
 
@@ -114,10 +140,18 @@ claude --dangerously-skip-permissions \
 1. 사용자가 "종료" / "끝" 이메일 전송
 2. tmux send-keys -t session-{UUID} "/exit" Enter
 3. tmux kill-session -t session-{UUID}
-4. rm /tmp/claude-postman/{UUID}.fifo
-5. DB: status → ended
-6. 종료 확인 이메일 발송
+4. FIFO에 "SHUTDOWN" sentinel 쓰기 (non-blocking, O_WRONLY|O_NONBLOCK)
+   ├─ 성공 → goroutine 블로킹 읽기 해제
+   └─ ENXIO → goroutine 이미 종료 → 스킵
+5. goroutine 종료 대기 (타임아웃 5초)
+6. rm /tmp/claude-postman/{UUID}.fifo
+7. DB: status → ended
+8. 종료 확인 이메일 발송
 ```
+
+> **주의**: FIFO sentinel을 먼저 쓴 후 파일을 삭제해야 goroutine 누수를 방지.
+> tmux kill-session 후 Claude Code가 DONE 신호를 보낼 수 없으므로,
+> sentinel 없이 rm만 하면 goroutine이 영원히 블로킹됨.
 
 ---
 

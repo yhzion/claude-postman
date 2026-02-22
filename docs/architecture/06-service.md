@@ -273,7 +273,8 @@ serve 시작
 errgroup.Group (context.Context로 종료 제어)
   ├─ goroutine 1: IMAP 폴링
   │   └─ 매 poll_interval_sec마다 Poll() 실행
-  │      → 새 메시지 → 세션 라우팅
+  │      → 새 메시지 → inbox 테이블 삽입
+  │      → idle 세션의 미처리 inbox 확인 → 세션 전달
   │
   ├─ goroutine 2: Outbox 플러시
   │   └─ 매 poll_interval_sec마다 FlushOutbox() 실행
@@ -290,7 +291,7 @@ errgroup.Group (context.Context로 종료 제어)
 ```
 각 goroutine의 에러 처리:
   ├─ IMAP 폴링 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
-  ├─ Outbox 발송 실패 → 에러 로그 + 다음 주기에 재시도 (중단 안 함)
+  ├─ Outbox 발송 실패 → 지수 백오프 재시도 (최대 5회, 이후 failed)
   ├─ FIFO 읽기 에러 → 에러 로그 + FIFO 재생성 시도
   └─ 치명적 에러 (DB 손상 등) → errgroup 취소 → 전체 종료
 ```
@@ -302,9 +303,12 @@ SIGINT / SIGTERM 수신
   ↓
 context.Cancel()
   ↓
-활성 세션의 FIFO에 "SHUTDOWN" sentinel 쓰기 → 블로킹 읽기 해제
+활성 세션의 FIFO에 "SHUTDOWN" sentinel 쓰기 (non-blocking)
+  ├─ O_WRONLY|O_NONBLOCK으로 열기
+  ├─ 성공 → "SHUTDOWN" 쓰기 → 블로킹 읽기 해제
+  └─ ENXIO (읽기 측 없음) → goroutine 이미 종료 → 스킵
   ↓
-각 goroutine 종료 대기 (errgroup.Wait)
+각 goroutine 종료 대기 (errgroup.Wait, 타임아웃 5초)
   ↓
 DB 커넥션 닫기
   ↓

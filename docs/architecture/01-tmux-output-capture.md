@@ -94,9 +94,12 @@ claude-postman 수신:
   ↓
 context.Cancel()
   ↓
-각 세션의 FIFO에 sentinel 값 "SHUTDOWN" 쓰기
+각 세션의 FIFO에 sentinel 값 "SHUTDOWN" 쓰기 (non-blocking)
+  ├─ O_WRONLY|O_NONBLOCK으로 열기
+  ├─ 성공 → "SHUTDOWN" 쓰기 → 블로킹 읽기 해제
+  └─ ENXIO (읽기 측 없음) → goroutine 이미 종료 → 스킵
   ↓
-블로킹 읽기 해제 → goroutine이 context 확인 → 종료
+goroutine 종료 대기 (타임아웃 5초)
 ```
 
 FIFO의 장점:

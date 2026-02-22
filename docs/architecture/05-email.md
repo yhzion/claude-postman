@@ -28,7 +28,7 @@
 ```
 폴링 루프 (config.poll_interval_sec 주기, 기본 30초)
   ↓
-IMAP 접속 (INBOX만)
+IMAP 접속 (INBOX만, defer Close로 반드시 해제)
   ↓
 검색: SUBJECT "[claude-postman]"
   ↓
@@ -40,11 +40,18 @@ IMAP 접속 (INBOX만)
   │   └─ 아님 → 기존 세션 메시지
   ├─ 기존 세션 매칭:
   │   ├─ Session-ID 추출
-  │   ├─ 매칭 성공 + idle → 세션에 메시지 전달
-  │   ├─ 매칭 성공 + active → inbox 테이블에 대기열 추가
+  │   ├─ 매칭 성공 → inbox 테이블에 삽입 (세션 상태 무관)
   │   └─ 매칭 실패 → 무시
   └─ 처리 완료 표시 (SEEN 플래그)
+  ↓
+idle 세션의 미처리 inbox 확인 → 있으면 세션에 전달
+  ↓
+IMAP 연결 해제 (에러 발생 시에도 defer로 보장)
 ```
+
+> **IMAP 연결 정책**: 매 폴링 주기마다 새 연결을 생성하고 즉시 해제.
+> 연결 유지(keep-alive) 방식은 네트워크 단절 시 복구가 복잡하므로 채택하지 않음.
+> Gmail의 동시 IMAP 연결 제한(15개)에 걸리지 않도록 반드시 defer Close 사용.
 
 ### 2.2 세션 매칭 우선순위
 
@@ -54,21 +61,23 @@ IMAP 접속 (INBOX만)
 
 ### 2.3 대기열 (DB inbox 테이블)
 
-세션이 active 상태일 때 도착한 메시지는 DB inbox 테이블에 저장:
+**모든 수신 메시지는 세션 상태와 무관하게 항상 inbox 테이블에 삽입한다.**
+이는 IMAP goroutine과 FIFO goroutine 사이의 경합 조건(lost wakeup)을 방지한다.
 
 ```
-active 세션에 메시지 도착
+메시지 수신 (세션 상태 무관)
   ↓
 inbox 테이블에 삽입 (session_id, body, processed=0)
   ↓
-세션이 idle로 전환 (FIFO 완료 신호 수신)
+소비 시점 (두 가지 트리거):
+  ├─ FIFO 완료 신호 수신 → idle 전환과 inbox 확인을 단일 트랜잭션으로
+  └─ IMAP 폴링 완료 후 → idle 세션의 미처리 inbox 확인
   ↓
-inbox에서 해당 세션의 미처리 메시지 조회 (FIFO 순서)
-  ↓
-다음 메시지를 세션에 전달 → processed=1
-  ↓
-세션 → active
+다음 메시지를 세션에 전달 → processed=1, 세션 → active
 ```
+
+> **경합 조건 방지**: idle 전환과 inbox 확인을 DB 트랜잭션 하나로 묶음.
+> "idle로 전환 직후 메시지 도착" 시나리오에서도 다음 폴링 주기에 감지.
 
 ### 2.4 세션 생성 (템플릿 포워드)
 
@@ -160,17 +169,31 @@ SMTP 발송 시도
 
 ## 4. 오프라인 대응
 
-### 4.1 Outbox 재시도
+### 4.1 Outbox 재시도 (지수 백오프)
 
 ```
 outbox 플러시 루프 (폴링과 동일 주기)
   ↓
-pending 상태 메시지 조회
+pending 상태 + next_retry_at <= now 메시지 조회
   ↓
 각 메시지 SMTP 발송 시도
-  ├─ 성공 → sent
-  └─ 실패 → 다음 주기에 재시도
+  ├─ 성공 → status: sent, sent_at 기록
+  └─ 실패:
+       retry_count += 1
+       ├─ retry_count < max_retries (기본: 5)
+       │   → next_retry_at = now + 30s × 2^(retry_count-1)
+       │     (30s, 1m, 2m, 4m, 8m)
+       └─ retry_count >= max_retries
+           → status: failed (더 이상 재시도 안 함)
 ```
+
+| retry_count | 대기 시간 | 누적 |
+|-------------|----------|------|
+| 1 | 30초 | 30초 |
+| 2 | 1분 | 1분 30초 |
+| 3 | 2분 | 3분 30초 |
+| 4 | 4분 | 7분 30초 |
+| 5 | failed | — |
 
 ### 4.2 이점
 
@@ -220,8 +243,6 @@ DB template.message_id와 매칭
 
 | 라이브러리 | 용도 |
 |-----------|------|
-| 라이브러리 | 용도 |
-|-----------|------|
 | `net/smtp` (표준) | SMTP 발송 |
 | `emersion/go-imap` v2 | IMAP 수신 |
 | `emersion/go-message` | 이메일 메시지 파싱 (MIME, 헤더, 본문) |
@@ -244,13 +265,13 @@ type Mailer struct {
 
 func New(cfg *config.EmailConfig, store *storage.Store) *Mailer
 
-// 수신
+// 수신 (매 호출 시 IMAP 연결 생성/해제, defer Close 보장)
 func (m *Mailer) Poll() ([]*IncomingMessage, error)
-func (m *Mailer) StartPolling(ctx context.Context, interval time.Duration)
+func (m *Mailer) DeliverPendingToIdleSessions() error  // idle 세션의 미처리 inbox 전달
 
-// 발송
+// 발송 (지수 백오프 재시도, 최대 5회)
 func (m *Mailer) Send(sessionID, subject, htmlBody string) error
-func (m *Mailer) FlushOutbox() error
+func (m *Mailer) FlushOutbox() error  // pending + next_retry_at <= now 조회
 
 // 템플릿
 func (m *Mailer) SendTemplate() (messageID string, err error)
