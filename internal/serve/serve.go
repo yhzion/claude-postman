@@ -23,7 +23,7 @@ const fifoDir = "/tmp/claude-postman"
 
 // sessionMgr abstracts session.Manager for testability.
 type sessionMgr interface {
-	Create(workingDir, model string) (*storage.Session, error)
+	Create(workingDir, model, prompt string) (*storage.Session, error)
 	DeliverNext(sessionID string) error
 	ListActive() ([]*storage.Session, error)
 	RecoverAll() error
@@ -168,28 +168,8 @@ func (s *server) handleNewSession(msg *email.IncomingMessage) error {
 		workingDir = home
 	}
 
-	sess, err := s.mgr.Create(workingDir, model)
-	if err != nil {
+	if _, err := s.mgr.Create(workingDir, model, msg.Body); err != nil {
 		return fmt.Errorf("create session: %w", err)
-	}
-
-	inboxMsg := &storage.InboxMessage{
-		ID:        uuid.New().String(),
-		SessionID: sess.ID,
-		Body:      msg.Body,
-	}
-	if err := s.store.EnqueueMessage(inboxMsg); err != nil {
-		return fmt.Errorf("enqueue message: %w", err)
-	}
-
-	// Set session to idle so DeliverNext can process the queued message.
-	sess.Status = "idle"
-	if err := s.store.UpdateSession(sess); err != nil {
-		return fmt.Errorf("update session: %w", err)
-	}
-
-	if err := s.mgr.DeliverNext(sess.ID); err != nil {
-		slog.Warn("failed to deliver initial message", "session_id", sess.ID, "error", err)
 	}
 
 	return nil

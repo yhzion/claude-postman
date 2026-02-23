@@ -18,7 +18,7 @@ import (
 // --- Mocks ---
 
 type mockMgr struct {
-	createFn      func(string, string) (*storage.Session, error)
+	createFn      func(string, string, string) (*storage.Session, error)
 	deliverFn     func(string) error
 	listActiveFn  func() ([]*storage.Session, error)
 	recoverAllFn  func() error
@@ -30,12 +30,13 @@ type mockMgr struct {
 type createCall struct {
 	workingDir string
 	model      string
+	prompt     string
 }
 
-func (m *mockMgr) Create(workingDir, model string) (*storage.Session, error) {
-	m.createCalls = append(m.createCalls, createCall{workingDir, model})
+func (m *mockMgr) Create(workingDir, model, prompt string) (*storage.Session, error) {
+	m.createCalls = append(m.createCalls, createCall{workingDir, model, prompt})
 	if m.createFn != nil {
-		return m.createFn(workingDir, model)
+		return m.createFn(workingDir, model, prompt)
 	}
 	return &storage.Session{ID: "test-id", Status: "active"}, nil
 }
@@ -158,21 +159,8 @@ func TestRunServe_RecoversOnStart(t *testing.T) {
 }
 
 func TestProcessMessages_NewSession(t *testing.T) {
-	t.Run("creates session and delivers initial prompt", func(t *testing.T) {
+	t.Run("creates session with prompt as CLI argument", func(t *testing.T) {
 		s, mgr, _ := newTestServer(t)
-
-		sessionID := "new-session-001"
-		mgr.createFn = func(workingDir, model string) (*storage.Session, error) {
-			session := &storage.Session{
-				ID:         sessionID,
-				TmuxName:   "session-" + sessionID,
-				WorkingDir: workingDir,
-				Model:      model,
-				Status:     "active",
-			}
-			require.NoError(t, s.store.CreateSession(session))
-			return session, nil
-		}
 
 		msgs := []*email.IncomingMessage{
 			{
@@ -186,44 +174,23 @@ func TestProcessMessages_NewSession(t *testing.T) {
 		err := s.processMessages(msgs)
 		require.NoError(t, err)
 
-		// Create called with correct params
+		// Create called with correct params including prompt
 		require.Len(t, mgr.createCalls, 1)
 		assert.Equal(t, "/home/user/project", mgr.createCalls[0].workingDir)
 		assert.Equal(t, "opus", mgr.createCalls[0].model)
+		assert.Equal(t, "Build a feature", mgr.createCalls[0].prompt)
 
-		// Message enqueued
-		msg, err := s.store.DequeueMessage(sessionID)
-		require.NoError(t, err)
-		require.NotNil(t, msg)
-		assert.Equal(t, "Build a feature", msg.Body)
-
-		// DeliverNext called
-		require.Len(t, mgr.deliverCalls, 1)
-		assert.Equal(t, sessionID, mgr.deliverCalls[0])
+		// No enqueue or DeliverNext — prompt passed directly to Create
+		assert.Empty(t, mgr.deliverCalls)
 	})
 
 	t.Run("uses default model when empty", func(t *testing.T) {
 		s, mgr, _ := newTestServer(t)
 
-		mgr.createFn = func(workingDir, model string) (*storage.Session, error) {
-			session := &storage.Session{
-				ID:         "default-model-session",
-				TmuxName:   "session-default-model",
-				WorkingDir: workingDir,
-				Model:      model,
-				Status:     "active",
-			}
-			require.NoError(t, s.store.CreateSession(session))
-			return session, nil
-		}
-
 		msgs := []*email.IncomingMessage{
 			{IsNewSession: true, WorkingDir: "/tmp", Model: "", Body: "task"},
 		}
-
-		err := s.processMessages(msgs)
-		require.NoError(t, err)
-
+		require.NoError(t, s.processMessages(msgs))
 		require.Len(t, mgr.createCalls, 1)
 		assert.Equal(t, "sonnet", mgr.createCalls[0].model)
 	})
@@ -231,24 +198,10 @@ func TestProcessMessages_NewSession(t *testing.T) {
 	t.Run("uses home dir when workingDir empty", func(t *testing.T) {
 		s, mgr, _ := newTestServer(t)
 
-		mgr.createFn = func(workingDir, model string) (*storage.Session, error) {
-			session := &storage.Session{
-				ID:         "default-dir-session",
-				TmuxName:   "session-default-dir",
-				WorkingDir: workingDir,
-				Model:      model,
-				Status:     "active",
-			}
-			require.NoError(t, s.store.CreateSession(session))
-			return session, nil
-		}
-
 		msgs := []*email.IncomingMessage{
 			{IsNewSession: true, WorkingDir: "", Model: "opus", Body: "task"},
 		}
-
-		err := s.processMessages(msgs)
-		require.NoError(t, err)
+		require.NoError(t, s.processMessages(msgs))
 
 		home, _ := os.UserHomeDir()
 		require.Len(t, mgr.createCalls, 1)

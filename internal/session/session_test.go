@@ -102,7 +102,7 @@ func createTestSession(t *testing.T, mgr *Manager, id, status string) *storage.S
 func TestCreate_DBRecordAndTmuxSession(t *testing.T) {
 	mgr, mock := newTestManager(t)
 
-	session, err := mgr.Create("/tmp/work", "sonnet")
+	session, err := mgr.Create("/tmp/work", "sonnet", "Do something cool")
 	require.NoError(t, err)
 
 	// UUID 형식 확인
@@ -116,21 +116,24 @@ func TestCreate_DBRecordAndTmuxSession(t *testing.T) {
 	assert.Equal(t, "active", session.Status)
 	assert.Equal(t, "/tmp/work", session.WorkingDir)
 	assert.Equal(t, "sonnet", session.Model)
+	require.NotNil(t, session.LastPrompt)
+	assert.Equal(t, "Do something cool", *session.LastPrompt)
 
 	// tmux 세션 생성 확인
 	assert.True(t, mock.sessions[session.TmuxName], "tmux 세션이 생성되어야 함")
 
-	// send-keys 호출 확인 (claude 명령)
+	// send-keys 호출 확인 (claude 명령 + prompt via $(cat))
 	require.Len(t, mock.sentKeys, 1)
 	assert.Contains(t, mock.sentKeys[0].text, "claude --dangerously-skip-permissions")
+	assert.Contains(t, mock.sentKeys[0].text, "--session-id "+session.ID)
 	assert.Contains(t, mock.sentKeys[0].text, "--model sonnet")
-	assert.Contains(t, mock.sentKeys[0].text, session.ID)
+	assert.Contains(t, mock.sentKeys[0].text, "$(cat ")
 }
 
 func TestCreate_TMuxNameFormat(t *testing.T) {
 	mgr, _ := newTestManager(t)
 
-	session, err := mgr.Create("/tmp/work", "opus")
+	session, err := mgr.Create("/tmp/work", "opus", "task")
 	require.NoError(t, err)
 
 	assert.True(t, strings.HasPrefix(session.TmuxName, "session-"))
@@ -356,9 +359,9 @@ func TestRecoverAll_MissingSession(t *testing.T) {
 	// 새 tmux 세션 생성 확인
 	assert.True(t, mock.sessions["session-recover-missing"], "복구용 tmux 세션이 생성되어야 함")
 
-	// --resume 명령 확인
+	// --resume 명령 확인 (세션 ID 포함)
 	require.Len(t, mock.sentKeys, 1)
-	assert.Contains(t, mock.sentKeys[0].text, "--resume")
+	assert.Contains(t, mock.sentKeys[0].text, "--resume recover-missing")
 	assert.Contains(t, mock.sentKeys[0].text, "--model sonnet")
 
 	// DB 상태 유지

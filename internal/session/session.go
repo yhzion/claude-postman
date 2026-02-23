@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,17 +57,31 @@ func tmuxName(sessionID string) string {
 	return "session-" + sessionID
 }
 
-func (m *Manager) claudeCommand(sessionID, model string) string {
-	prompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID)
-	return fmt.Sprintf("claude --dangerously-skip-permissions --system-prompt '%s' --model %s", prompt, model)
+func (m *Manager) claudeCommand(sessionID, model, promptFile string) string {
+	sysPrompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID)
+	return fmt.Sprintf("claude --dangerously-skip-permissions --session-id %s --system-prompt '%s' --model %s \"$(cat %s)\"",
+		sessionID, sysPrompt, model, promptFile)
 }
 
-func (m *Manager) claudeResumeCommand(model string) string {
-	return fmt.Sprintf("claude --dangerously-skip-permissions --resume --model %s", model)
+func (m *Manager) claudeResumeCommand(sessionID, model string) string {
+	return fmt.Sprintf("claude --dangerously-skip-permissions --resume %s --model %s", sessionID, model)
 }
 
-// Create creates a new tmux session with Claude Code.
-func (m *Manager) Create(workingDir, model string) (*storage.Session, error) {
+func (m *Manager) promptFilePath(sessionID string) string {
+	return filepath.Join(m.fifoDir, sessionID+".prompt")
+}
+
+func (m *Manager) writePromptFile(sessionID, prompt string) error {
+	return os.WriteFile(m.promptFilePath(sessionID), []byte(prompt), 0o600)
+}
+
+func (m *Manager) removePromptFile(sessionID string) {
+	_ = os.Remove(m.promptFilePath(sessionID))
+}
+
+// Create creates a new tmux session with Claude Code and sends the initial prompt
+// as a CLI argument. This avoids timing issues with SendKeys-based prompt delivery.
+func (m *Manager) Create(workingDir, model, prompt string) (*storage.Session, error) {
 	id := uuid.New().String()
 	name := tmuxName(id)
 
@@ -75,6 +91,7 @@ func (m *Manager) Create(workingDir, model string) (*storage.Session, error) {
 		WorkingDir: workingDir,
 		Model:      model,
 		Status:     "creating",
+		LastPrompt: &prompt,
 	}
 	if err := m.store.CreateSession(session); err != nil {
 		return nil, fmt.Errorf("create session record: %w", err)
@@ -84,11 +101,15 @@ func (m *Manager) Create(workingDir, model string) (*storage.Session, error) {
 		return nil, fmt.Errorf("create FIFO: %w", err)
 	}
 
+	if err := m.writePromptFile(id, prompt); err != nil {
+		return nil, fmt.Errorf("write prompt file: %w", err)
+	}
+
 	if err := m.tmux.NewSession(name, workingDir); err != nil {
 		return nil, fmt.Errorf("tmux new-session: %w", err)
 	}
 
-	cmd := m.claudeCommand(id, model)
+	cmd := m.claudeCommand(id, model, m.promptFilePath(id))
 	if err := m.tmux.SendKeys(name, cmd); err != nil {
 		return nil, fmt.Errorf("tmux send-keys: %w", err)
 	}
@@ -116,6 +137,7 @@ func (m *Manager) End(sessionID string) error {
 
 	m.writeSentinel(sessionID)
 	_ = m.removeFIFO(sessionID)
+	m.removePromptFile(sessionID)
 
 	session.Status = "ended"
 	return m.store.UpdateSession(session)
@@ -195,7 +217,7 @@ func (m *Manager) RecoverAll() error {
 			continue
 		}
 
-		cmd := m.claudeResumeCommand(session.Model)
+		cmd := m.claudeResumeCommand(session.ID, session.Model)
 		if sendErr := m.tmux.SendKeys(session.TmuxName, cmd); sendErr != nil {
 			session.Status = "ended"
 			_ = m.store.UpdateSession(session)
