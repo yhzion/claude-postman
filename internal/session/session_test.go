@@ -385,6 +385,28 @@ func TestListActive(t *testing.T) {
 	assert.False(t, ids["ended-1"])
 }
 
+func TestListActive_IncludesWaiting(t *testing.T) {
+	mgr, _ := newTestManager(t)
+
+	createTestSession(t, mgr, "active-1", "active")
+	createTestSession(t, mgr, "waiting-1", "waiting")
+	createTestSession(t, mgr, "idle-1", "idle")
+	createTestSession(t, mgr, "ended-1", "ended")
+
+	active, err := mgr.ListActive()
+	require.NoError(t, err)
+	assert.Len(t, active, 3, "active + waiting + idle = 3")
+
+	ids := make(map[string]bool)
+	for _, s := range active {
+		ids[s.ID] = true
+	}
+	assert.True(t, ids["active-1"])
+	assert.True(t, ids["waiting-1"])
+	assert.True(t, ids["idle-1"])
+	assert.False(t, ids["ended-1"])
+}
+
 func TestRecoverAll_ExistingSession(t *testing.T) {
 	mgr, mock := newTestManager(t)
 	createTestSession(t, mgr, "recover-exists", "active")

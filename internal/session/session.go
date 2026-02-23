@@ -188,16 +188,16 @@ func (m *Manager) Get(sessionID string) (*storage.Session, error) {
 	return m.store.GetSession(sessionID)
 }
 
-// ListActive returns all non-ended sessions (creating, active, idle).
+// ListActive returns all non-ended sessions (creating, active, idle, waiting).
 func (m *Manager) ListActive() ([]*storage.Session, error) {
-	return m.store.ListSessionsByStatus("creating", "active", "idle")
+	return m.store.ListSessionsByStatus("creating", "active", "idle", "waiting")
 }
 
 // RecoverAll attempts to recover sessions that were active/idle before server restart.
 // For each session missing its tmux session, it recreates the tmux session with --resume.
 // If recovery fails, the session is marked as ended.
 func (m *Manager) RecoverAll() error {
-	sessions, err := m.store.ListSessionsByStatus("active", "idle")
+	sessions, err := m.store.ListSessionsByStatus("active", "idle", "waiting")
 	if err != nil {
 		return err
 	}
