@@ -66,6 +66,22 @@ func TestParseTemplate(t *testing.T) {
 		assert.Equal(t, "opus", model)
 		assert.Equal(t, "Build it", prompt)
 	})
+
+	t.Run("removes Gmail reply citation (Korean)", func(t *testing.T) {
+		body := "Directory: ~/project\nModel: opus\n\n코드를 분석해줘\n\n2026년 2월 23일 (월) PM 12:30, <user@gmail.com>님이 작성:\n\nHow to create a new Claude Code session\nIMPORTANT — Do NOT change..."
+		dir, model, prompt := ParseTemplate(body)
+		assert.Equal(t, "~/project", dir)
+		assert.Equal(t, "opus", model)
+		assert.Equal(t, "코드를 분석해줘", prompt)
+	})
+
+	t.Run("removes Gmail reply citation (English)", func(t *testing.T) {
+		body := "Directory: ~/work\nModel: sonnet\n\nAnalyze the code\n\nOn Mon, Feb 23, 2026 at 12:30 PM <user@gmail.com> wrote:\n\nOriginal template content..."
+		dir, model, prompt := ParseTemplate(body)
+		assert.Equal(t, "~/work", dir)
+		assert.Equal(t, "sonnet", model)
+		assert.Equal(t, "Analyze the code", prompt)
+	})
 }
 
 func TestExtractTextFromHTML(t *testing.T) {

@@ -12,6 +12,8 @@ var (
 	modelRe     = regexp.MustCompile(`(?m)^Model:\s*(.+)$`)
 	tagRe       = regexp.MustCompile(`<[^>]*>`)
 	blockRe     = regexp.MustCompile(`(?i)<\s*(?:br|/p|/div|/tr|/li)\s*/?\s*>`)
+	// Gmail reply citation: line containing <email> and ending with ":"
+	replyCiteRe = regexp.MustCompile(`(?m)^.*<\S+@\S+>.*:\s*$`)
 )
 
 const forwardedMarker = "---------- Forwarded message ----------"
@@ -33,9 +35,14 @@ func ParseSessionID(body string) string {
 //
 // Returns empty strings for workingDir/model if not found (caller applies defaults).
 func ParseTemplate(body string) (workingDir, model, prompt string) {
-	// Step 2: Remove forwarded message section
+	// Step 2a: Remove forwarded message section
 	if idx := strings.Index(body, forwardedMarker); idx >= 0 {
 		body = body[:idx]
+	}
+
+	// Step 2b: Remove Gmail reply citation and everything after it
+	if loc := replyCiteRe.FindStringIndex(body); loc != nil {
+		body = body[:loc[0]]
 	}
 
 	// Step 3: Remove quote prefixes (max 1 level)
