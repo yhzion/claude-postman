@@ -58,7 +58,7 @@ func (m *Manager) handleDoneTx(session *storage.Session, output string) (*storag
 			ID:        uuid.New().String(),
 			SessionID: session.ID,
 			Subject:   "Claude Code result",
-			Body:      output,
+			Body:      renderOutput(output),
 			Status:    "pending",
 		}
 		if txErr := tx.CreateOutbox(outbox); txErr != nil {
@@ -95,7 +95,7 @@ func (m *Manager) handleAskTx(session *storage.Session, output string) error {
 			ID:        uuid.New().String(),
 			SessionID: session.ID,
 			Subject:   "Claude Code is waiting for your input",
-			Body:      output,
+			Body:      renderOutput(output),
 			Status:    "pending",
 		}
 		if txErr := tx.CreateOutbox(outbox); txErr != nil {
