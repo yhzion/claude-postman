@@ -204,6 +204,31 @@ func TestDeliverNext_IdleWithMessage(t *testing.T) {
 	assert.Equal(t, "session-deliver-1", mock.sentKeys[0].session)
 }
 
+func TestDeliverNext_WaitingWithMessage(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "waiting-1", "waiting")
+	mock.sessions["session-waiting-1"] = true
+
+	msg := &storage.InboxMessage{
+		ID:        "reply-1",
+		SessionID: "waiting-1",
+		Body:      "3번 선택",
+	}
+	require.NoError(t, mgr.store.EnqueueMessage(msg))
+
+	err := mgr.DeliverNext("waiting-1")
+	require.NoError(t, err)
+
+	got, err := mgr.Get("waiting-1")
+	require.NoError(t, err)
+	assert.Equal(t, "active", got.Status)
+	require.NotNil(t, got.LastPrompt)
+	assert.Equal(t, "3번 선택", *got.LastPrompt)
+
+	require.Len(t, mock.sentKeys, 1)
+	assert.Equal(t, "3번 선택", mock.sentKeys[0].text)
+}
+
 func TestDeliverNext_ActiveSession(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	createTestSession(t, mgr, "active-1", "active")

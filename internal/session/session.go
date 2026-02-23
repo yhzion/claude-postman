@@ -150,7 +150,7 @@ func (m *Manager) DeliverNext(sessionID string) error {
 	if err != nil {
 		return ErrSessionNotFound
 	}
-	if session.Status != "idle" {
+	if session.Status != "idle" && session.Status != "waiting" {
 		return ErrSessionNotIdle
 	}
 
