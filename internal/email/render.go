@@ -3,10 +3,18 @@ package email
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 )
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// StripANSI removes ANSI escape codes from terminal output.
+func StripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 var md = goldmark.New(
 	goldmark.WithExtensions(
