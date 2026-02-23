@@ -267,6 +267,32 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, "aabbccdd-1122-3344-5566-778899001122", msgs[0].SessionID)
 	})
 
+	t.Run("ignores self-received template email", func(t *testing.T) {
+		smtp := &mockSMTPSender{}
+		imapMock := &mockIMAPClient{}
+		m, _ := testMailer(t, imapMock, smtp)
+
+		// Send template to create DB record
+		messageID, err := m.SendTemplate()
+		require.NoError(t, err)
+
+		// Simulate the template email arriving back via IMAP
+		imapMock.emails = []*RawEmail{
+			{
+				From:      "user@example.com",
+				Subject:   "[claude-postman] New Session",
+				Body:      "How to create a new Claude Code session...",
+				MessageID: messageID,
+				UID:       1,
+			},
+		}
+
+		msgs, err := m.Poll()
+		require.NoError(t, err)
+		assert.Empty(t, msgs, "self-received template should be filtered out")
+		assert.Contains(t, imapMock.marked, imap.UID(1), "should still mark as read")
+	})
+
 	t.Run("matches existing session by outbox Message-ID", func(t *testing.T) {
 		imap := &mockIMAPClient{}
 		m, store := testMailer(t, imap, &mockSMTPSender{})

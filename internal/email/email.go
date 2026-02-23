@@ -68,6 +68,15 @@ func (m *Mailer) Poll() ([]*IncomingMessage, error) {
 			continue
 		}
 
+		// Filter out self-received template emails
+		if ok, _ := m.store.IsValidTemplateRef(raw.MessageID); ok {
+			slog.Debug("ignoring self-received template", "message_id", raw.MessageID)
+			if markErr := client.MarkRead(raw.UID); markErr != nil {
+				slog.Warn("failed to mark template as read", "uid", raw.UID, "error", markErr)
+			}
+			continue
+		}
+
 		msg := &IncomingMessage{
 			From:      raw.From,
 			Subject:   raw.Subject,
