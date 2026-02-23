@@ -82,6 +82,46 @@ func (m *Manager) handleDoneTx(session *storage.Session, output string) (*storag
 	return nextMsg, err
 }
 
+// handleAskTx runs the transactional part of HandleAsk:
+// saves result, creates outbox, and sets status to "waiting".
+func (m *Manager) handleAskTx(session *storage.Session, output string) error {
+	return m.store.Tx(context.Background(), func(tx *storage.Store) error {
+		session.LastResult = &output
+
+		outbox := &storage.OutboxMessage{
+			ID:        uuid.New().String(),
+			SessionID: session.ID,
+			Subject:   "Claude Code is waiting for your input",
+			Body:      output,
+			Status:    "pending",
+		}
+		if txErr := tx.CreateOutbox(outbox); txErr != nil {
+			return txErr
+		}
+
+		session.Status = "waiting"
+		return tx.UpdateSession(session)
+	})
+}
+
+// HandleAsk processes an ASK signal from a session's FIFO.
+// Captures tmux output, creates outbox email, and sets status to "waiting".
+func (m *Manager) HandleAsk(sessionID string) error {
+	time.Sleep(m.captureDelay)
+
+	session, err := m.store.GetSession(sessionID)
+	if err != nil {
+		return ErrSessionNotFound
+	}
+
+	output, err := m.tmux.CapturePane(session.TmuxName, capturePaneLines)
+	if err != nil {
+		return fmt.Errorf("capture-pane: %w", err)
+	}
+
+	return m.handleAskTx(session, output)
+}
+
 // HandleDone processes a DONE signal from a session's FIFO.
 // 1. Waits captureDelay for rendering to complete.
 // 2. Captures tmux pane output.

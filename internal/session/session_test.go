@@ -290,6 +290,34 @@ func TestHandleDone_WithPendingInbox(t *testing.T) {
 	assert.Nil(t, dequeued, "메시지가 이미 처리되어야 함")
 }
 
+func TestHandleAsk_TransitionsToWaiting(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "ask-1", "active")
+	mock.captured = "어느 프로젝트를 분석할까요?\n1. A\n2. B\n❯ "
+
+	err := mgr.HandleAsk("ask-1")
+	require.NoError(t, err)
+
+	got, err := mgr.Get("ask-1")
+	require.NoError(t, err)
+	assert.Equal(t, "waiting", got.Status)
+	require.NotNil(t, got.LastResult)
+	assert.Contains(t, *got.LastResult, "어느 프로젝트를 분석할까요?")
+
+	outbox, err := mgr.store.GetPendingOutbox()
+	require.NoError(t, err)
+	require.Len(t, outbox, 1)
+	assert.Equal(t, "ask-1", outbox[0].SessionID)
+	assert.Contains(t, outbox[0].Body, "어느 프로젝트를 분석할까요?")
+}
+
+func TestHandleAsk_NotFound(t *testing.T) {
+	mgr, _ := newTestManager(t)
+
+	err := mgr.HandleAsk("nonexistent")
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+}
+
 func TestGet(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	createTestSession(t, mgr, "get-test", "active")
