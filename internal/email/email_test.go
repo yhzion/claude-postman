@@ -232,7 +232,7 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, "world", msgs[0].Body)
 	})
 
-	t.Run("detects new session via template forward", func(t *testing.T) {
+	t.Run("detects new session via template reply", func(t *testing.T) {
 		smtp := &mockSMTPSender{}
 		imapMock := &mockIMAPClient{}
 		m, _ := testMailer(t, imapMock, smtp)
@@ -241,7 +241,7 @@ func TestPoll(t *testing.T) {
 		messageID, err := m.SendTemplate()
 		require.NoError(t, err)
 
-		// Now simulate a forwarded template email
+		// Now simulate a reply to the template email
 		imapMock.emails = []*RawEmail{
 			{
 				From:      "user@example.com",

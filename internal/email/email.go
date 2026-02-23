@@ -21,7 +21,7 @@ type IncomingMessage struct {
 	Body         string
 	SessionID    string // set when matching existing session
 	MessageID    string
-	IsNewSession bool   // template forward detected
+	IsNewSession bool   // template reply detected
 	WorkingDir   string // parsed from template (IsNewSession=true)
 	Model        string // parsed from template (IsNewSession=true)
 }

@@ -14,7 +14,7 @@
 | 식별 | 제목 태그 `[claude-postman]` |
 | 세션 매칭 | Session-ID (본문) + In-Reply-To/References (스레드) |
 | 발신자 검증 | config의 `email.user`와 From 일치 시만 처리 |
-| 세션 생성 | 템플릿 이메일 포워드 (템플릿 참조 검증) |
+| 세션 생성 | 템플릿 이메일에 답장 (템플릿 참조 검증) |
 | 본문 형식 | HTML (goldmark + chroma) |
 | 대기열 저장 | DB inbox 테이블 |
 | 오프라인 | outbox 테이블에 저장 후 재시도 |
@@ -85,12 +85,12 @@ inbox 테이블에 삽입 (session_id, body, processed=0)
 > `store.Tx()`로 묶음. "idle로 전환 직후 메시지 도착" 시에도
 > 다음 IMAP 폴링 주기에 감지.
 
-### 2.4 세션 생성 (템플릿 포워드)
+### 2.4 세션 생성 (템플릿 답장)
 
-init 시 발송된 템플릿 이메일을 포워드하여 새 세션 생성:
+init 시 발송된 템플릿 이메일에 답장하여 새 세션 생성:
 
 ```
-사용자가 템플릿 이메일 포워드
+사용자가 템플릿 이메일에 답장
   ↓
 In-Reply-To/References 확인
   ├─ DB template.message_id와 매칭 → 세션 생성 허용
@@ -128,7 +128,7 @@ Model: sonnet
   나머지 텍스트 (빈 줄 제거 후) → 태스크 프롬프트
 ```
 
-사용자는 Directory, Model을 수정하고 태스크 내용을 입력한 후 자기 자신에게 포워드.
+사용자는 Directory, Model을 수정하고 태스크 내용을 입력한 후 자기 자신에게 답장.
 
 ---
 
@@ -222,7 +222,7 @@ pending 상태 + next_retry_at <= now 메시지 조회
 
 ### 5.2 템플릿 참조 검증
 
-새 세션 생성은 템플릿 이메일의 포워드/답장만 허용:
+새 세션 생성은 템플릿 이메일에 대한 답장만 허용:
 
 ```
 수신 이메일의 In-Reply-To/References
@@ -293,7 +293,7 @@ type IncomingMessage struct {
     Body         string
     SessionID    string  // 기존 세션 메시지일 때 세트
     MessageID    string
-    IsNewSession bool    // 템플릿 포워드 여부
+    IsNewSession bool    // 템플릿 답장 여부
     WorkingDir   string  // IsNewSession=true일 때 파싱된 디렉터리
     Model        string  // IsNewSession=true일 때 파싱된 모델
 }
