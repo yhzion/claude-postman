@@ -77,28 +77,7 @@ func (m *Mailer) Poll() ([]*IncomingMessage, error) {
 			continue
 		}
 
-		msg := &IncomingMessage{
-			From:      raw.From,
-			Subject:   raw.Subject,
-			Body:      raw.Body,
-			MessageID: raw.MessageID,
-		}
-
-		// Check template reference (new session)
-		if m.isTemplateRef(raw.InReplyTo, raw.References) {
-			msg.IsNewSession = true
-			body := raw.Body
-			if looksLikeHTML(body) {
-				body = ExtractTextFromHTML(body)
-			}
-			msg.WorkingDir, msg.Model, msg.Body = ParseTemplate(body)
-		} else {
-			// Try session matching
-			msg.SessionID = ParseSessionID(raw.Body)
-			if msg.SessionID == "" {
-				msg.SessionID = m.matchByMessageID(raw.InReplyTo, raw.References)
-			}
-		}
+		msg := m.classifyRawEmail(raw)
 
 		// Mark as read
 		if markErr := client.MarkRead(raw.UID); markErr != nil {
@@ -249,6 +228,33 @@ func (m *Mailer) matchByMessageID(inReplyTo string, references []string) string 
 		}
 	}
 	return ""
+}
+
+// classifyRawEmail parses a raw IMAP email into an IncomingMessage,
+// determining whether it's a new session request or an existing session reply.
+func (m *Mailer) classifyRawEmail(raw *RawEmail) *IncomingMessage {
+	msg := &IncomingMessage{
+		From:      raw.From,
+		Subject:   raw.Subject,
+		Body:      raw.Body,
+		MessageID: raw.MessageID,
+	}
+
+	if m.isTemplateRef(raw.InReplyTo, raw.References) {
+		msg.IsNewSession = true
+		body := raw.Body
+		if looksLikeHTML(body) {
+			body = ExtractTextFromHTML(body)
+		}
+		msg.WorkingDir, msg.Model, msg.Body = ParseTemplate(body)
+	} else {
+		msg.SessionID = ParseSessionID(raw.Body)
+		if msg.SessionID == "" {
+			msg.SessionID = m.matchByMessageID(raw.InReplyTo, raw.References)
+		}
+	}
+
+	return msg
 }
 
 func looksLikeHTML(s string) bool {
