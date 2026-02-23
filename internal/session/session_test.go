@@ -1,8 +1,10 @@
 package session
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -204,6 +206,31 @@ func TestDeliverNext_IdleWithMessage(t *testing.T) {
 	assert.Equal(t, "session-deliver-1", mock.sentKeys[0].session)
 }
 
+func TestDeliverNext_WaitingWithMessage(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "waiting-1", "waiting")
+	mock.sessions["session-waiting-1"] = true
+
+	msg := &storage.InboxMessage{
+		ID:        "reply-1",
+		SessionID: "waiting-1",
+		Body:      "3번 선택",
+	}
+	require.NoError(t, mgr.store.EnqueueMessage(msg))
+
+	err := mgr.DeliverNext("waiting-1")
+	require.NoError(t, err)
+
+	got, err := mgr.Get("waiting-1")
+	require.NoError(t, err)
+	assert.Equal(t, "active", got.Status)
+	require.NotNil(t, got.LastPrompt)
+	assert.Equal(t, "3번 선택", *got.LastPrompt)
+
+	require.Len(t, mock.sentKeys, 1)
+	assert.Equal(t, "3번 선택", mock.sentKeys[0].text)
+}
+
 func TestDeliverNext_ActiveSession(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	createTestSession(t, mgr, "active-1", "active")
@@ -290,6 +317,41 @@ func TestHandleDone_WithPendingInbox(t *testing.T) {
 	assert.Nil(t, dequeued, "메시지가 이미 처리되어야 함")
 }
 
+func TestHandleAsk_TransitionsToWaiting(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "ask-1", "active")
+	mock.captured = "어느 프로젝트를 분석할까요?\n1. A\n2. B\n❯ "
+
+	err := mgr.HandleAsk("ask-1")
+	require.NoError(t, err)
+
+	got, err := mgr.Get("ask-1")
+	require.NoError(t, err)
+	assert.Equal(t, "waiting", got.Status)
+	require.NotNil(t, got.LastResult)
+	assert.Contains(t, *got.LastResult, "어느 프로젝트를 분석할까요?")
+
+	outbox, err := mgr.store.GetPendingOutbox()
+	require.NoError(t, err)
+	require.Len(t, outbox, 1)
+	assert.Equal(t, "ask-1", outbox[0].SessionID)
+	assert.Contains(t, outbox[0].Body, "어느 프로젝트를 분석할까요?")
+}
+
+func TestHandleAsk_NotFound(t *testing.T) {
+	mgr, _ := newTestManager(t)
+
+	err := mgr.HandleAsk("nonexistent")
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+}
+
+func TestClaudeCommand_ContainsAskInstruction(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	cmd := mgr.claudeCommand("test-id", "sonnet", "/tmp/prompt")
+	assert.Contains(t, cmd, "ASK:test-id")
+	assert.Contains(t, cmd, "DONE:test-id")
+}
+
 func TestGet(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	createTestSession(t, mgr, "get-test", "active")
@@ -327,6 +389,28 @@ func TestListActive(t *testing.T) {
 	assert.True(t, ids["active-1"])
 	assert.True(t, ids["idle-1"])
 	assert.True(t, ids["creating-1"])
+	assert.False(t, ids["ended-1"])
+}
+
+func TestListActive_IncludesWaiting(t *testing.T) {
+	mgr, _ := newTestManager(t)
+
+	createTestSession(t, mgr, "active-1", "active")
+	createTestSession(t, mgr, "waiting-1", "waiting")
+	createTestSession(t, mgr, "idle-1", "idle")
+	createTestSession(t, mgr, "ended-1", "ended")
+
+	active, err := mgr.ListActive()
+	require.NoError(t, err)
+	assert.Len(t, active, 3, "active + waiting + idle = 3")
+
+	ids := make(map[string]bool)
+	for _, s := range active {
+		ids[s.ID] = true
+	}
+	assert.True(t, ids["active-1"])
+	assert.True(t, ids["waiting-1"])
+	assert.True(t, ids["idle-1"])
 	assert.False(t, ids["ended-1"])
 }
 
@@ -384,4 +468,74 @@ func TestRecoverAll_RecoveryFailure(t *testing.T) {
 	got, err := mgr.Get("recover-fail")
 	require.NoError(t, err)
 	assert.Equal(t, "ended", got.Status)
+}
+
+func TestListenFIFO_HandlesDoneSignal(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "fifo-done", "active")
+	mock.captured = "작업 완료"
+
+	require.NoError(t, mgr.createFIFO("fifo-done"))
+
+	go mgr.listenFIFO("fifo-done")
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-done"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("DONE:fifo-done\n")
+	require.NoError(t, err)
+	f.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	got, err := mgr.Get("fifo-done")
+	require.NoError(t, err)
+	assert.Equal(t, "idle", got.Status)
+}
+
+func TestListenFIFO_HandlesAskSignal(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "fifo-ask", "active")
+	mock.captured = "질문입니다\n❯ "
+
+	require.NoError(t, mgr.createFIFO("fifo-ask"))
+
+	go mgr.listenFIFO("fifo-ask")
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-ask"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("ASK:fifo-ask\n")
+	require.NoError(t, err)
+	f.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	got, err := mgr.Get("fifo-ask")
+	require.NoError(t, err)
+	assert.Equal(t, "waiting", got.Status)
+}
+
+func TestListenFIFO_ShutdownExits(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	createTestSession(t, mgr, "fifo-shut", "active")
+
+	require.NoError(t, mgr.createFIFO("fifo-shut"))
+
+	done := make(chan struct{})
+	go func() {
+		mgr.listenFIFO("fifo-shut")
+		close(done)
+	}()
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-shut"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("SHUTDOWN\n")
+	require.NoError(t, err)
+	f.Close()
+
+	select {
+	case <-done:
+		// OK: goroutine exited
+	case <-time.After(2 * time.Second):
+		t.Fatal("listenFIFO did not exit on SHUTDOWN")
+	}
 }

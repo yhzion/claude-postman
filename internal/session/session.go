@@ -21,6 +21,10 @@ const (
 const systemPromptTemplate = `작업이 완료되면 반드시 다음 명령을 실행하세요:
 echo 'DONE:%s' > /tmp/claude-postman/%s.fifo
 
+사용자에게 질문하거나 선택을 요청할 때는 반드시 다음 명령을 먼저 실행하세요:
+echo 'ASK:%s' > /tmp/claude-postman/%s.fifo
+그리고 사용자의 답변을 기다리세요.
+
 최종 응답에는 반드시 다음을 포함하세요:
 - 작업 과정 요약
 - 결과
@@ -58,7 +62,7 @@ func tmuxName(sessionID string) string {
 }
 
 func (m *Manager) claudeCommand(sessionID, model, promptFile string) string {
-	sysPrompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID)
+	sysPrompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID, sessionID, sessionID)
 	return fmt.Sprintf("claude --dangerously-skip-permissions --session-id %s --system-prompt '%s' --model %s \"$(cat %s)\"",
 		sessionID, sysPrompt, model, promptFile)
 }
@@ -119,6 +123,8 @@ func (m *Manager) Create(workingDir, model, prompt string) (*storage.Session, er
 		return nil, fmt.Errorf("update session status: %w", err)
 	}
 
+	go m.listenFIFO(id)
+
 	return session, nil
 }
 
@@ -150,7 +156,7 @@ func (m *Manager) DeliverNext(sessionID string) error {
 	if err != nil {
 		return ErrSessionNotFound
 	}
-	if session.Status != "idle" {
+	if session.Status != "idle" && session.Status != "waiting" {
 		return ErrSessionNotIdle
 	}
 
@@ -186,16 +192,25 @@ func (m *Manager) Get(sessionID string) (*storage.Session, error) {
 	return m.store.GetSession(sessionID)
 }
 
-// ListActive returns all non-ended sessions (creating, active, idle).
+// ListActive returns all non-ended sessions (creating, active, idle, waiting).
 func (m *Manager) ListActive() ([]*storage.Session, error) {
-	return m.store.ListSessionsByStatus("creating", "active", "idle")
+	return m.store.ListSessionsByStatus("creating", "active", "idle", "waiting")
+}
+
+// CaptureOutput captures the current tmux pane output for a session.
+func (m *Manager) CaptureOutput(sessionID string) (string, error) {
+	session, err := m.store.GetSession(sessionID)
+	if err != nil {
+		return "", ErrSessionNotFound
+	}
+	return m.tmux.CapturePane(session.TmuxName, capturePaneLines)
 }
 
 // RecoverAll attempts to recover sessions that were active/idle before server restart.
 // For each session missing its tmux session, it recreates the tmux session with --resume.
 // If recovery fails, the session is marked as ended.
 func (m *Manager) RecoverAll() error {
-	sessions, err := m.store.ListSessionsByStatus("active", "idle")
+	sessions, err := m.store.ListSessionsByStatus("active", "idle", "waiting")
 	if err != nil {
 		return err
 	}
@@ -223,6 +238,8 @@ func (m *Manager) RecoverAll() error {
 			_ = m.store.UpdateSession(session)
 			continue
 		}
+
+		go m.listenFIFO(session.ID)
 	}
 
 	return nil

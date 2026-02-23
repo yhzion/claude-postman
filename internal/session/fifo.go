@@ -1,11 +1,14 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -80,6 +83,89 @@ func (m *Manager) handleDoneTx(session *storage.Session, output string) (*storag
 		return tx.UpdateSession(session)
 	})
 	return nextMsg, err
+}
+
+// handleAskTx runs the transactional part of HandleAsk:
+// saves result, creates outbox, and sets status to "waiting".
+func (m *Manager) handleAskTx(session *storage.Session, output string) error {
+	return m.store.Tx(context.Background(), func(tx *storage.Store) error {
+		session.LastResult = &output
+
+		outbox := &storage.OutboxMessage{
+			ID:        uuid.New().String(),
+			SessionID: session.ID,
+			Subject:   "Claude Code is waiting for your input",
+			Body:      output,
+			Status:    "pending",
+		}
+		if txErr := tx.CreateOutbox(outbox); txErr != nil {
+			return txErr
+		}
+
+		session.Status = "waiting"
+		return tx.UpdateSession(session)
+	})
+}
+
+// HandleAsk processes an ASK signal from a session's FIFO.
+// Captures tmux output, creates outbox email, and sets status to "waiting".
+func (m *Manager) HandleAsk(sessionID string) error {
+	time.Sleep(m.captureDelay)
+
+	session, err := m.store.GetSession(sessionID)
+	if err != nil {
+		return ErrSessionNotFound
+	}
+
+	output, err := m.tmux.CapturePane(session.TmuxName, capturePaneLines)
+	if err != nil {
+		return fmt.Errorf("capture-pane: %w", err)
+	}
+
+	return m.handleAskTx(session, output)
+}
+
+// dispatchSignal processes a single FIFO signal line.
+// Returns true if the listener should exit (SHUTDOWN received).
+func (m *Manager) dispatchSignal(sessionID, line string) bool {
+	switch {
+	case strings.HasPrefix(line, "DONE:"):
+		if err := m.HandleDone(sessionID); err != nil {
+			slog.Error("HandleDone failed", "session_id", sessionID, "error", err)
+		}
+	case strings.HasPrefix(line, "ASK:"):
+		if err := m.HandleAsk(sessionID); err != nil {
+			slog.Error("HandleAsk failed", "session_id", sessionID, "error", err)
+		}
+	case line == "SHUTDOWN":
+		return true
+	default:
+		slog.Warn("unknown FIFO signal", "session_id", sessionID, "line", line)
+	}
+	return false
+}
+
+// listenFIFO blocks reading the session's FIFO for DONE/ASK/SHUTDOWN signals.
+// It re-opens the FIFO after each writer EOF to wait for the next signal.
+// Exits on SHUTDOWN sentinel or FIFO removal.
+func (m *Manager) listenFIFO(sessionID string) {
+	path := m.fifoPath(sessionID)
+	for {
+		f, err := os.OpenFile(path, os.O_RDONLY, 0)
+		if err != nil {
+			slog.Debug("fifo open failed, exiting listener", "session_id", sessionID, "error", err)
+			return
+		}
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			if m.dispatchSignal(sessionID, scanner.Text()) {
+				f.Close()
+				return
+			}
+		}
+		f.Close()
+	}
 }
 
 // HandleDone processes a DONE signal from a session's FIFO.
