@@ -119,6 +119,8 @@ func (m *Manager) Create(workingDir, model, prompt string) (*storage.Session, er
 		return nil, fmt.Errorf("update session status: %w", err)
 	}
 
+	go m.listenFIFO(id)
+
 	return session, nil
 }
 
@@ -223,6 +225,8 @@ func (m *Manager) RecoverAll() error {
 			_ = m.store.UpdateSession(session)
 			continue
 		}
+
+		go m.listenFIFO(session.ID)
 	}
 
 	return nil

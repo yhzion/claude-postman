@@ -1,11 +1,14 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -120,6 +123,41 @@ func (m *Manager) HandleAsk(sessionID string) error {
 	}
 
 	return m.handleAskTx(session, output)
+}
+
+// listenFIFO blocks reading the session's FIFO for DONE/ASK/SHUTDOWN signals.
+// It re-opens the FIFO after each writer EOF to wait for the next signal.
+// Exits on SHUTDOWN sentinel or FIFO removal.
+func (m *Manager) listenFIFO(sessionID string) {
+	path := m.fifoPath(sessionID)
+	for {
+		f, err := os.OpenFile(path, os.O_RDONLY, 0)
+		if err != nil {
+			slog.Debug("fifo open failed, exiting listener", "session_id", sessionID, "error", err)
+			return
+		}
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			switch {
+			case strings.HasPrefix(line, "DONE:"):
+				if err := m.HandleDone(sessionID); err != nil {
+					slog.Error("HandleDone failed", "session_id", sessionID, "error", err)
+				}
+			case strings.HasPrefix(line, "ASK:"):
+				if err := m.HandleAsk(sessionID); err != nil {
+					slog.Error("HandleAsk failed", "session_id", sessionID, "error", err)
+				}
+			case line == "SHUTDOWN":
+				f.Close()
+				return
+			default:
+				slog.Warn("unknown FIFO signal", "session_id", sessionID, "line", line)
+			}
+		}
+		f.Close()
+	}
 }
 
 // HandleDone processes a DONE signal from a session's FIFO.

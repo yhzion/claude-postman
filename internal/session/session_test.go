@@ -1,8 +1,10 @@
 package session
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -437,4 +439,74 @@ func TestRecoverAll_RecoveryFailure(t *testing.T) {
 	got, err := mgr.Get("recover-fail")
 	require.NoError(t, err)
 	assert.Equal(t, "ended", got.Status)
+}
+
+func TestListenFIFO_HandlesDoneSignal(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "fifo-done", "active")
+	mock.captured = "작업 완료"
+
+	require.NoError(t, mgr.createFIFO("fifo-done"))
+
+	go mgr.listenFIFO("fifo-done")
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-done"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("DONE:fifo-done\n")
+	require.NoError(t, err)
+	f.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	got, err := mgr.Get("fifo-done")
+	require.NoError(t, err)
+	assert.Equal(t, "idle", got.Status)
+}
+
+func TestListenFIFO_HandlesAskSignal(t *testing.T) {
+	mgr, mock := newTestManager(t)
+	createTestSession(t, mgr, "fifo-ask", "active")
+	mock.captured = "질문입니다\n❯ "
+
+	require.NoError(t, mgr.createFIFO("fifo-ask"))
+
+	go mgr.listenFIFO("fifo-ask")
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-ask"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("ASK:fifo-ask\n")
+	require.NoError(t, err)
+	f.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	got, err := mgr.Get("fifo-ask")
+	require.NoError(t, err)
+	assert.Equal(t, "waiting", got.Status)
+}
+
+func TestListenFIFO_ShutdownExits(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	createTestSession(t, mgr, "fifo-shut", "active")
+
+	require.NoError(t, mgr.createFIFO("fifo-shut"))
+
+	done := make(chan struct{})
+	go func() {
+		mgr.listenFIFO("fifo-shut")
+		close(done)
+	}()
+
+	f, err := os.OpenFile(mgr.fifoPath("fifo-shut"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("SHUTDOWN\n")
+	require.NoError(t, err)
+	f.Close()
+
+	select {
+	case <-done:
+		// OK: goroutine exited
+	case <-time.After(2 * time.Second):
+		t.Fatal("listenFIFO did not exit on SHUTDOWN")
+	}
 }
