@@ -270,12 +270,13 @@ func TestHandleDone_TransitionsToIdle(t *testing.T) {
 	require.NotNil(t, got.LastResult)
 	assert.Equal(t, "작업 완료 결과입니다", *got.LastResult)
 
-	// outbox 생성 확인
+	// outbox 생성 확인: Body는 HTML로 변환되어야 함
 	outbox, err := mgr.store.GetPendingOutbox()
 	require.NoError(t, err)
 	require.Len(t, outbox, 1)
 	assert.Equal(t, "done-1", outbox[0].SessionID)
-	assert.Equal(t, "작업 완료 결과입니다", outbox[0].Body)
+	assert.Contains(t, outbox[0].Body, "<html>")
+	assert.Contains(t, outbox[0].Body, "작업 완료 결과입니다")
 	assert.Equal(t, "pending", outbox[0].Status)
 }
 
@@ -331,10 +332,12 @@ func TestHandleAsk_TransitionsToWaiting(t *testing.T) {
 	require.NotNil(t, got.LastResult)
 	assert.Contains(t, *got.LastResult, "어느 프로젝트를 분석할까요?")
 
+	// outbox Body는 HTML로 변환되어야 함
 	outbox, err := mgr.store.GetPendingOutbox()
 	require.NoError(t, err)
 	require.Len(t, outbox, 1)
 	assert.Equal(t, "ask-1", outbox[0].SessionID)
+	assert.Contains(t, outbox[0].Body, "<html>")
 	assert.Contains(t, outbox[0].Body, "어느 프로젝트를 분석할까요?")
 }
 

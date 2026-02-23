@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yhzion/claude-postman/internal/email"
 	"github.com/yhzion/claude-postman/internal/storage"
 )
 
@@ -38,6 +39,18 @@ var (
 	ErrSessionEnded    = errors.New("session already ended")
 	ErrSessionNotIdle  = errors.New("session is not idle")
 )
+
+// renderOutput converts raw tmux output to HTML for email delivery.
+// ANSI escape codes are stripped, then Markdown is rendered to HTML.
+// Falls back to cleaned plain text if HTML conversion fails.
+func renderOutput(raw string) string {
+	cleaned := email.StripANSI(raw)
+	html, err := email.RenderHTML(cleaned)
+	if err != nil {
+		return cleaned
+	}
+	return html
+}
 
 // Manager manages tmux session lifecycles.
 type Manager struct {

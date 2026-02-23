@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yhzion/claude-postman/internal/email"
 	"github.com/yhzion/claude-postman/internal/storage"
 )
 
@@ -109,6 +110,39 @@ func TestE2E_AskSignalAndReply(t *testing.T) {
 	require.NoError(t, err)
 	output := string(out)
 	assert.Contains(t, output, "분석 결과입니다")
+}
+
+func TestE2E_HTMLEmailFromTmuxOutput(t *testing.T) {
+	skipIfNoTmux(t)
+
+	tmpDir := t.TempDir()
+	tmuxName := "e2e-html-email"
+
+	// Create tmux session
+	require.NoError(t, exec.Command("tmux", "new-session", "-d", "-s", tmuxName, "-c", tmpDir).Run())
+	t.Cleanup(func() {
+		_ = exec.Command("tmux", "kill-session", "-t", tmuxName).Run()
+	})
+
+	// Run a script that produces ANSI-colored output (simulates Claude Code)
+	script := `printf '\033[1m## 분석 결과\033[0m\n\033[32m코드베이스가 정상입니다.\033[0m\n'`
+	require.NoError(t, exec.Command("tmux", "send-keys", "-t", tmuxName, script, "Enter").Run())
+	time.Sleep(500 * time.Millisecond)
+
+	// Capture raw tmux output (as HandleDone would)
+	out, err := exec.Command("tmux", "capture-pane", "-t", tmuxName, "-p", "-S", "-50").Output()
+	require.NoError(t, err)
+	raw := string(out)
+
+	// Apply the same pipeline as renderOutput: StripANSI → RenderHTML
+	cleaned := email.StripANSI(raw)
+	assert.NotContains(t, cleaned, "\x1b[", "ANSI codes should be stripped")
+
+	html, err := email.RenderHTML(cleaned)
+	require.NoError(t, err)
+	assert.Contains(t, html, "<html>")
+	assert.Contains(t, html, "분석 결과")
+	assert.Contains(t, html, "코드베이스가 정상입니다")
 }
 
 func TestE2E_TildeExpansion(t *testing.T) {
