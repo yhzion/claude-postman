@@ -345,6 +345,13 @@ func TestHandleAsk_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrSessionNotFound)
 }
 
+func TestClaudeCommand_ContainsAskInstruction(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	cmd := mgr.claudeCommand("test-id", "sonnet", "/tmp/prompt")
+	assert.Contains(t, cmd, "ASK:test-id")
+	assert.Contains(t, cmd, "DONE:test-id")
+}
+
 func TestGet(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	createTestSession(t, mgr, "get-test", "active")

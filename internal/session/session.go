@@ -21,6 +21,10 @@ const (
 const systemPromptTemplate = `작업이 완료되면 반드시 다음 명령을 실행하세요:
 echo 'DONE:%s' > /tmp/claude-postman/%s.fifo
 
+사용자에게 질문하거나 선택을 요청할 때는 반드시 다음 명령을 먼저 실행하세요:
+echo 'ASK:%s' > /tmp/claude-postman/%s.fifo
+그리고 사용자의 답변을 기다리세요.
+
 최종 응답에는 반드시 다음을 포함하세요:
 - 작업 과정 요약
 - 결과
@@ -58,7 +62,7 @@ func tmuxName(sessionID string) string {
 }
 
 func (m *Manager) claudeCommand(sessionID, model, promptFile string) string {
-	sysPrompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID)
+	sysPrompt := fmt.Sprintf(systemPromptTemplate, sessionID, sessionID, sessionID, sessionID)
 	return fmt.Sprintf("claude --dangerously-skip-permissions --session-id %s --system-prompt '%s' --model %s \"$(cat %s)\"",
 		sessionID, sysPrompt, model, promptFile)
 }
