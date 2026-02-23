@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -206,6 +207,41 @@ func TestProcessMessages_NewSession(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		require.Len(t, mgr.createCalls, 1)
 		assert.Equal(t, home, mgr.createCalls[0].workingDir)
+	})
+}
+
+func TestProcessMessages_NewSession_TildeExpansion(t *testing.T) {
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	t.Run("expands ~/path to absolute", func(t *testing.T) {
+		s, mgr, _ := newTestServer(t)
+		msgs := []*email.IncomingMessage{
+			{IsNewSession: true, WorkingDir: "~/myproject", Model: "opus", Body: "task"},
+		}
+		require.NoError(t, s.processMessages(msgs))
+		require.Len(t, mgr.createCalls, 1)
+		assert.Equal(t, filepath.Join(home, "myproject"), mgr.createCalls[0].workingDir)
+	})
+
+	t.Run("expands bare ~ to home dir", func(t *testing.T) {
+		s, mgr, _ := newTestServer(t)
+		msgs := []*email.IncomingMessage{
+			{IsNewSession: true, WorkingDir: "~", Model: "opus", Body: "task"},
+		}
+		require.NoError(t, s.processMessages(msgs))
+		require.Len(t, mgr.createCalls, 1)
+		assert.Equal(t, home, mgr.createCalls[0].workingDir)
+	})
+
+	t.Run("leaves absolute path unchanged", func(t *testing.T) {
+		s, mgr, _ := newTestServer(t)
+		msgs := []*email.IncomingMessage{
+			{IsNewSession: true, WorkingDir: "/abs/path", Model: "opus", Body: "task"},
+		}
+		require.NoError(t, s.processMessages(msgs))
+		require.Len(t, mgr.createCalls, 1)
+		assert.Equal(t, "/abs/path", mgr.createCalls[0].workingDir)
 	})
 }
 

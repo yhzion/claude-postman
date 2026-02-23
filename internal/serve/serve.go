@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -164,6 +166,18 @@ func (s *server) handleNewSession(msg *email.IncomingMessage) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("get home dir: %w", err)
+		}
+		workingDir = home
+	} else if strings.HasPrefix(workingDir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("expand home dir: %w", err)
+		}
+		workingDir = filepath.Join(home, workingDir[2:])
+	} else if workingDir == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("expand home dir: %w", err)
 		}
 		workingDir = home
 	}
