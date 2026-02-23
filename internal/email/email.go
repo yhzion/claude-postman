@@ -176,7 +176,7 @@ func (m *Mailer) SendTemplate() (string, error) {
 
 IMPORTANT — Do NOT change:
   - The subject line (must contain [claude-postman])
-  - You must FORWARD this email, not compose a new one
+  - You must REPLY to this email (do not compose a new one)
   - Send to yourself (your own email address)
   - Keep "Directory:" and "Model:" keywords exactly as written
 
@@ -195,8 +195,8 @@ Model: sonnet
 ────────────────────────────────────
 
 Tips:
-  - You can forward this email multiple times
-    — each forward creates a new session
+  - You can reply to this email multiple times
+    — each reply creates a new session
   - A fresh template is sent every time the server starts`
 	htmlBody, err := RenderHTML(templateBody)
 	if err != nil {

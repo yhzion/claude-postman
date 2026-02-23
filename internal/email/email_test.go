@@ -199,6 +199,20 @@ func TestSendTemplate(t *testing.T) {
 		assert.Equal(t, "user@example.com", smtp.sent[0].from)
 		assert.Equal(t, "user@example.com", smtp.sent[0].to)
 	})
+
+	t.Run("template body instructs reply not forward", func(t *testing.T) {
+		smtp := &mockSMTPSender{}
+		m, _ := testMailer(t, &mockIMAPClient{}, smtp)
+
+		_, err := m.SendTemplate()
+		require.NoError(t, err)
+
+		require.Len(t, smtp.sent, 1)
+		body := smtp.sent[0].body
+		assert.NotContains(t, body, "FORWARD")
+		assert.NotContains(t, body, "forward")
+		assert.Contains(t, body, "REPLY")
+	})
 }
 
 func TestPoll(t *testing.T) {
