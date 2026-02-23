@@ -19,13 +19,16 @@ import (
 // --- Mocks ---
 
 type mockMgr struct {
-	createFn      func(string, string, string) (*storage.Session, error)
-	deliverFn     func(string) error
-	listActiveFn  func() ([]*storage.Session, error)
-	recoverAllFn  func() error
-	createCalls   []createCall
-	deliverCalls  []string
-	recoverCalled atomic.Bool
+	createFn        func(string, string, string) (*storage.Session, error)
+	deliverFn       func(string) error
+	listActiveFn    func() ([]*storage.Session, error)
+	recoverAllFn    func() error
+	handleAskFn     func(string) error
+	captureOutputFn func(string) (string, error)
+	createCalls     []createCall
+	deliverCalls    []string
+	handleAskCalls  []string
+	recoverCalled   atomic.Bool
 }
 
 type createCall struct {
@@ -63,6 +66,21 @@ func (m *mockMgr) RecoverAll() error {
 		return m.recoverAllFn()
 	}
 	return nil
+}
+
+func (m *mockMgr) HandleAsk(sessionID string) error {
+	m.handleAskCalls = append(m.handleAskCalls, sessionID)
+	if m.handleAskFn != nil {
+		return m.handleAskFn(sessionID)
+	}
+	return nil
+}
+
+func (m *mockMgr) CaptureOutput(sessionID string) (string, error) {
+	if m.captureOutputFn != nil {
+		return m.captureOutputFn(sessionID)
+	}
+	return "", nil
 }
 
 type mockMail struct {
@@ -312,4 +330,76 @@ func TestCheckIdleSessions(t *testing.T) {
 	assert.Len(t, mgr.deliverCalls, 2)
 	assert.Contains(t, mgr.deliverCalls, "idle-1")
 	assert.Contains(t, mgr.deliverCalls, "idle-2")
+}
+
+func TestCheckIdleSessions_IncludesWaiting(t *testing.T) {
+	s, mgr, _ := newTestServer(t)
+
+	mgr.listActiveFn = func() ([]*storage.Session, error) {
+		return []*storage.Session{
+			{ID: "idle-1", Status: "idle"},
+			{ID: "waiting-1", Status: "waiting"},
+			{ID: "active-1", Status: "active"},
+		}, nil
+	}
+
+	err := s.checkIdleSessions()
+	require.NoError(t, err)
+
+	assert.Len(t, mgr.deliverCalls, 2)
+	assert.Contains(t, mgr.deliverCalls, "idle-1")
+	assert.Contains(t, mgr.deliverCalls, "waiting-1")
+}
+
+func TestCheckWaitingPrompts_DetectsPrompt(t *testing.T) {
+	s, mgr, _ := newTestServer(t)
+
+	mgr.listActiveFn = func() ([]*storage.Session, error) {
+		return []*storage.Session{
+			{ID: "active-1", Status: "active"},
+		}, nil
+	}
+	mgr.captureOutputFn = func(_ string) (string, error) {
+		return "Choose:\n1. A\n2. B\n❯ ", nil
+	}
+
+	err := s.checkWaitingPrompts()
+	require.NoError(t, err)
+
+	assert.Len(t, mgr.handleAskCalls, 1)
+	assert.Equal(t, "active-1", mgr.handleAskCalls[0])
+}
+
+func TestCheckWaitingPrompts_SkipsNonActive(t *testing.T) {
+	s, mgr, _ := newTestServer(t)
+
+	mgr.listActiveFn = func() ([]*storage.Session, error) {
+		return []*storage.Session{
+			{ID: "idle-1", Status: "idle"},
+			{ID: "waiting-1", Status: "waiting"},
+		}, nil
+	}
+
+	err := s.checkWaitingPrompts()
+	require.NoError(t, err)
+
+	assert.Empty(t, mgr.handleAskCalls)
+}
+
+func TestCheckWaitingPrompts_NoPromptNoAction(t *testing.T) {
+	s, mgr, _ := newTestServer(t)
+
+	mgr.listActiveFn = func() ([]*storage.Session, error) {
+		return []*storage.Session{
+			{ID: "active-1", Status: "active"},
+		}, nil
+	}
+	mgr.captureOutputFn = func(_ string) (string, error) {
+		return "● Thinking about the problem...", nil
+	}
+
+	err := s.checkWaitingPrompts()
+	require.NoError(t, err)
+
+	assert.Empty(t, mgr.handleAskCalls)
 }

@@ -197,6 +197,15 @@ func (m *Manager) ListActive() ([]*storage.Session, error) {
 	return m.store.ListSessionsByStatus("creating", "active", "idle", "waiting")
 }
 
+// CaptureOutput captures the current tmux pane output for a session.
+func (m *Manager) CaptureOutput(sessionID string) (string, error) {
+	session, err := m.store.GetSession(sessionID)
+	if err != nil {
+		return "", ErrSessionNotFound
+	}
+	return m.tmux.CapturePane(session.TmuxName, capturePaneLines)
+}
+
 // RecoverAll attempts to recover sessions that were active/idle before server restart.
 // For each session missing its tmux session, it recreates the tmux session with --resume.
 // If recovery fails, the session is marked as ended.

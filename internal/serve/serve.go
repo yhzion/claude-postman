@@ -29,6 +29,8 @@ type sessionMgr interface {
 	DeliverNext(sessionID string) error
 	ListActive() ([]*storage.Session, error)
 	RecoverAll() error
+	HandleAsk(sessionID string) error
+	CaptureOutput(sessionID string) (string, error)
 }
 
 // mailPoller abstracts email.Mailer for testability.
@@ -118,6 +120,9 @@ func (s *server) pollLoop(ctx context.Context, interval time.Duration) error {
 			if err := s.checkIdleSessions(); err != nil {
 				slog.Error("check idle sessions failed", "error", err)
 			}
+			if err := s.checkWaitingPrompts(); err != nil {
+				slog.Error("check waiting prompts failed", "error", err)
+			}
 		}
 	}
 }
@@ -204,9 +209,34 @@ func (s *server) checkIdleSessions() error {
 	}
 
 	for _, sess := range sessions {
-		if sess.Status == "idle" {
+		if sess.Status == "idle" || sess.Status == "waiting" {
 			if err := s.mgr.DeliverNext(sess.ID); err != nil {
-				slog.Warn("failed to deliver to idle session", "session_id", sess.ID, "error", err)
+				slog.Warn("failed to deliver to session", "session_id", sess.ID, "error", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *server) checkWaitingPrompts() error {
+	sessions, err := s.mgr.ListActive()
+	if err != nil {
+		return err
+	}
+
+	for _, sess := range sessions {
+		if sess.Status != "active" {
+			continue
+		}
+		output, err := s.mgr.CaptureOutput(sess.ID)
+		if err != nil {
+			slog.Warn("failed to capture output", "session_id", sess.ID, "error", err)
+			continue
+		}
+		if session.HasInputPrompt(output) {
+			if err := s.mgr.HandleAsk(sess.ID); err != nil {
+				slog.Warn("fallback HandleAsk failed", "session_id", sess.ID, "error", err)
 			}
 		}
 	}
